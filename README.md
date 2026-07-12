@@ -2,22 +2,19 @@
 
 So sánh 2 thư mục codegen AUTOSAR (MATLAB/Simulink) — lọc noise, chỉ hiện thay đổi thực sự.
 
-**Zero dependency** — chỉ cần Python 3.8+ (stdlib), không pip install, server chỉ bind `127.0.0.1`.
+**Zero dependency** — chỉ cần Python 3.8+ (stdlib), không pip install, không server.
 
 ## Chạy
 
 ```bash
-python -m compare_tool <thu_muc_gen_cu> <thu_muc_gen_moi>
+python -m compare_tool <thu_muc_gen_cu> <thu_muc_gen_moi> [--report out.html]
 ```
 
-Browser tự mở `http://127.0.0.1:8765/`. Tùy chọn:
+Scan xong xuất HTML report tự chứa (mặc định `compare_report.html`), mở bằng browser bất kỳ, gửi team được. Exit code 1 nếu có thay đổi thật — dùng cho CI.
 
 | Flag | Ý nghĩa |
 |---|---|
-| `--report out.html` | Xuất HTML report (chỉ thay đổi thật) |
-| `--port 8080` | Đổi port UI |
-| `--no-browser` | Không tự mở browser |
-| `--no-server` | Headless: scan + report rồi thoát (exit code 1 nếu có thay đổi thật — dùng cho CI) |
+| `--report out.html` | Đường dẫn file report (mặc định `compare_report.html`) |
 
 ## Noise được bỏ qua (ignorable)
 
@@ -32,14 +29,12 @@ Browser tự mở `http://127.0.0.1:8765/`. Tùy chọn:
 
 Nguyên tắc fail-safe: không chứng minh được là noise → đánh REAL.
 
-## UI
+## Report HTML
 
-- **Tree** trái: badge màu — đỏ = thay đổi thật, vàng = chỉ noise, xanh lá = file mới, tím gạch = file xóa, xám = giống hệt (ẩn mặc định, bật checkbox `identical`).
-- **Split diff** phải: đỏ/xanh = thay đổi thật (highlight mức ký tự), vàng viền = noise kèm nhãn loại.
-- Nút **Ignored: SHOWN/HIDDEN**: bật/tắt highlight noise (lưu localStorage).
-- Chips `tên_cũ → tên_mới` khi file có rename.
-- Phím `n` / `p`: nhảy tới hunk thật kế/trước. Ô filter lọc tên file.
-- **Export report**: HTML tự chứa, gửi team được.
+- **Badge summary** đầu trang: click badge để ẩn/hiện loại đó (real change / ignorable-only / added / deleted / identical). `identical` ẩn mặc định.
+- **Folder tree** kiểu Beyond Compare: ký hiệu theo file — `≠` thay đổi thật, `≈` minor (chỉ comment/noise), `+` file mới, `−` file xóa, `=` giống hệt. Folder xổ/thu, trạng thái folder = trạng thái nặng nhất bên trong. Click file `≠` nhảy thẳng tới diff.
+- Mỗi file thay đổi thật là mục **click để xổ/thu diff** (split 2 cột, đỏ/xanh). Nút Expand all / Collapse all.
+- File ignorable-only liệt kê kèm nhãn loại noise (comment/rename/uuid/timestamp/whitespace).
 
 ## Test
 
@@ -56,9 +51,7 @@ compare_tool/
 ├── diff_engine.py   # diff 2 lượt (raw + normalized) & phân loại hunk
 ├── c_rules.py       # rule C/H: strip comment, tokenize, detect rename
 ├── arxml_rules.py   # rule ARXML: UUID, ADMIN-DATA, DATE, comment
-├── report.py        # HTML report
-├── server.py        # http.server + JSON API
-└── ui/index.html    # giao diện 1 file (vanilla JS, offline)
+└── report.py        # HTML report (tự chứa, badge toggle, diff xổ/thu)
 ```
 
 Muốn thêm rule mới: thêm hàm strip vào `c_rules.py`/`arxml_rules.py`, đăng ký vào shadow builder + `_build_variants` trong `diff_engine.py`.
