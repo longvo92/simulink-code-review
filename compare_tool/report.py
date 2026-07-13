@@ -375,9 +375,9 @@ def build_report(results, old_root, new_root):
     now = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
     parts = []
     parts.append('<!DOCTYPE html><html><head><meta charset="utf-8">'
-                 '<title>CodeGen Compare Report</title><style>{}</style></head>'
+                 '<title>AUTOSAR Code Generation Report</title><style>{}</style></head>'
                  '<body class="hide-id hide-ign">'.format(_CSS))
-    parts.append('<h1>CodeGen Compare Report</h1>')
+    parts.append('<h1>AUTOSAR Code Generation Report</h1>')
     parts.append('<div class="meta">OLD <code>{}</code> &rarr; NEW <code>{}</code>'
                  ' &middot; {}</div>'.format(
                      _esc(str(old_root)), _esc(str(new_root)), now))
