@@ -5,7 +5,7 @@ import difflib
 import html
 from pathlib import Path
 
-from .scanner import looks_binary, read_text, summarize
+from .scanner import looks_binary, read_text, summarize, summarize_ifaces
 
 CONTEXT = 3
 MAX_CONTENT = 400  # max lines shown for added/deleted file content
@@ -71,6 +71,14 @@ body.hide-ign tr.minorph { display: table-row; }
 tr.minorph td { color: #a8935a; }
 .filenote { color: #8a8a8a; font-size: 12px; margin: 2px 0 10px; }
 .renames { font-size: 12px; color: #c8b458; margin: 2px 0 8px; }
+.iflist { font-family: Consolas, monospace; font-size: 13px; background: #232427;
+          border: 1px solid #333; border-radius: 6px; padding: 10px 14px; margin: 0 0 20px; }
+.iflist div { padding: 1px 0; }
+.if-add { color: #7bd88a; } .if-del { color: #ff7b7b; }
+.iflist a { color: #9a9a9a; text-decoration: none; border-bottom: 1px dotted #666;
+            cursor: pointer; }
+.iflist a:hover { color: #fff; }
+.ifnote { font-size: 12px; color: #7fb3d9; margin: 2px 0 8px; }
 code { background: #2b2c30; padding: 1px 5px; border-radius: 4px; }
 details.file { margin: 10px 0; border: 1px solid #333; border-radius: 6px; background: #232427; }
 details.file > summary { list-style: none; cursor: pointer; padding: 10px 14px;
@@ -307,6 +315,45 @@ def _kinds_of(r):
     return ', '.join(sorted(kinds))
 
 
+def _iface_kind(tag):
+    """'SENDER-RECEIVER-INTERFACE' -> 'SENDER-RECEIVER' for display."""
+    return tag.replace('-INTERFACE', '')
+
+
+def _iface_section(results, anchors):
+    """Top-of-report list of every port-interface added/removed across all
+    arxml files; empty string when no arxml file carries interface info."""
+    if_added, if_removed = summarize_ifaces(results)
+    if not any('ifaces' in r for r in results.values()):
+        return ''
+    parts = ['<h2>ARXML interface changes</h2>']
+    if not if_added and not if_removed:
+        parts.append('<div class="filenote">No port-interfaces added or removed.'
+                     '</div>')
+        return ''.join(parts)
+    parts.append('<div class="iflist">')
+    for cls, sign, rows in (('if-add', '+', if_added), ('if-del', '−', if_removed)):
+        for rel, p, tag in rows:
+            loc = _esc(rel)
+            if rel in anchors:
+                loc = '<a onclick="go(\'{}\')">{}</a>'.format(anchors[rel], loc)
+            parts.append('<div><span class="{}">{} {}</span> '
+                         '<span class="kinds">{}</span> &mdash; {}</div>'.format(
+                             cls, sign, _esc(p), _esc(_iface_kind(tag)), loc))
+    parts.append('</div>')
+    return ''.join(parts)
+
+
+def _iface_note(r):
+    """Per-file one-liner listing that file's interface changes, or ''."""
+    d = r.get('ifaces')
+    if not d or not (d['added'] or d['removed']):
+        return ''
+    bits = ['+{} ({})'.format(p, _iface_kind(t)) for p, t in d['added']]
+    bits += ['−{} ({})'.format(p, _iface_kind(t)) for p, t in d['removed']]
+    return '<div class="ifnote">Interfaces: {}</div>'.format(_esc('; '.join(bits)))
+
+
 def _file_open(anchor, rel, status, extra=''):
     label, tag = _LABEL[status]
     sec = _TREE[status][2]
@@ -346,6 +393,8 @@ def build_report(results, old_root, new_root):
     detail_files = real_files + ign_files + added + deleted
     anchors = {rel: 'f{}'.format(i) for i, rel in enumerate(detail_files)}
 
+    parts.append(_iface_section(results, anchors))
+
     if results:
         parts.append('<h2>Folder tree</h2>')
         parts.append('<div class="legend">'
@@ -383,6 +432,7 @@ def build_report(results, old_root, new_root):
                                          ' + {} moved'.format(n_moved) if n_moved else '',
                                          ' + {} minor'.format(n_min) if n_min else '')
         parts.append(_file_open(anchors[rel], rel, 'real-change', extra))
+        parts.append(_iface_note(r))
         if r['binary']:
             parts.append('<div class="filenote">Binary file differs.</div>')
             parts.append('</div></details>')
@@ -424,6 +474,7 @@ def build_report(results, old_root, new_root):
             parts.append(_file_open(anchors[rel], rel, 'added',
                                     '({} line{})'.format(len(lines),
                                                          '' if len(lines) == 1 else 's')))
+            parts.append(_iface_note(results[rel]))
             parts.append(_content_table(lines, 'add'))
         parts.append('</div></details>')
 
@@ -438,6 +489,7 @@ def build_report(results, old_root, new_root):
             parts.append(_file_open(anchors[rel], rel, 'deleted',
                                     '({} line{})'.format(len(lines),
                                                          '' if len(lines) == 1 else 's')))
+            parts.append(_iface_note(results[rel]))
             parts.append(_content_table(lines, 'del'))
         parts.append('</div></details>')
 

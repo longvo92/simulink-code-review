@@ -130,6 +130,30 @@ class TestUnimportantToggle(unittest.TestCase):
         self.assertIn('body.hide-ign tr.minorph { display: table-row; }', page)
 
 
+class TestIfaceSection(unittest.TestCase):
+    """ARXML interface summary must appear at the top of the report."""
+
+    @classmethod
+    def setUpClass(cls):
+        results = scan(FIX / 'old', FIX / 'new')
+        cls.page = build_report(results, FIX / 'old', FIX / 'new')
+
+    def test_section_lists_added_and_removed(self):
+        self.assertIn('ARXML interface changes', self.page)
+        self.assertIn('+ /Interfaces/If_Torque', self.page)
+        self.assertIn('− /Interfaces/If_Diag', self.page)
+        self.assertIn('SENDER-RECEIVER', self.page)
+        self.assertIn('CLIENT-SERVER', self.page)
+
+    def test_per_file_note_rendered(self):
+        self.assertIn('Interfaces: +/Interfaces/If_Torque', self.page)
+
+    def test_no_section_without_arxml_iface_info(self):
+        results = scan(FIX / 'old', FIX / 'new', exclude=['arxml/*'])
+        page = build_report(results, FIX / 'old', FIX / 'new')
+        self.assertNotIn('ARXML interface changes', page)
+
+
 class TestMovedRendering(unittest.TestCase):
     OLD = ("void Alpha(void)\n{\n  alpha_state = 1;\n  alpha_out = 2;\n}\n"
            "void Beta(void)\n{\n  beta_state = 3;\n}\n")
