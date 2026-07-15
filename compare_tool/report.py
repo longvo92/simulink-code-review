@@ -25,6 +25,12 @@ h1 { font-size: 20px; } h2 { font-size: 15px; margin: 28px 0 6px; color: #e8e8e8
 .b-real { background: #6e2b2b; color: #ffb3b3; } .b-ign { background: #5c522a; color: #ffe28a; }
 .b-id { background: #333; color: #aaa; } .b-add { background: #2b5232; color: #a8e6b0; }
 .b-del { background: #4a2b52; color: #d9a8e6; }
+.b-err { background: #7a1f1f; color: #ffc2c2; border-color: #b04a4a; cursor: default; }
+.errbox { background: #4a1d1d; border: 1px solid #b04a4a; border-radius: 6px;
+          padding: 10px 14px; margin: 14px 0 20px; color: #ffd6d6; font-size: 13px; }
+.errbox .errtitle { font-weight: 700; font-size: 14px; margin-bottom: 6px; }
+.errbox div { padding: 1px 0; }
+.errbox code { background: #5c2626; }
 .hint { color: #7a7a7a; font-size: 11px; margin: -14px 0 18px; }
 body.hide-real .sec-real, body.hide-ign .sec-ign, body.hide-add .sec-add,
 body.hide-del .sec-del, body.hide-id .sec-id { display: none; }
@@ -44,9 +50,10 @@ ul.files li { margin: 2px 0; }
 .tf a:hover { color: #fff; }
 .tmark { display: inline-block; width: 14px; font-weight: bold; }
 .t-real { color: #ff7b7b; } .t-ign { color: #e6c85c; } .t-add { color: #7bd88a; }
-.t-del { color: #c88ad8; } .t-id { color: #777; }
+.t-del { color: #c88ad8; } .t-id { color: #777; } .t-err { color: #ff5c5c; }
 .tf.tc-real { color: #ffb3b3; } .tf.tc-ign { color: #ffe28a; } .tf.tc-add { color: #a8e6b0; }
 .tf.tc-del { color: #d9a8e6; text-decoration: line-through; } .tf.tc-id { color: #8a8a8a; }
+.tf.tc-err { color: #ffb3b3; font-weight: 700; }
 .legend { color: #8a8a8a; font-size: 12px; margin: 2px 0 8px; }
 table.diff { border-collapse: collapse; width: 100%; table-layout: fixed;
              font-family: Consolas, monospace; font-size: 12px; margin: 6px 0 14px; }
@@ -94,6 +101,7 @@ summary .hcount { color: #8a8a8a; font-size: 12px; font-weight: normal; }
 summary .tag { display: inline-block; padding: 1px 8px; border-radius: 8px; font-size: 11px; }
 .tag-real { background: #6e2b2b; color: #ffb3b3; } .tag-ign { background: #5c522a; color: #ffe28a; }
 .tag-add { background: #2b5232; color: #a8e6b0; } .tag-del { background: #4a2b52; color: #d9a8e6; }
+.tag-err { background: #7a1f1f; color: #ffc2c2; }
 .hunklabel { color: #c8b458; font-size: 11px; margin: 10px 0 0; text-transform: uppercase;
              letter-spacing: .5px; }
 .toolbar { margin: 4px 0 16px; }
@@ -112,7 +120,7 @@ table.ov a { color: #dcdcaa; text-decoration: none; border-bottom: 1px dotted #6
 table.ov a:hover { color: #fff; }
 .cnt { margin-right: 10px; white-space: nowrap; }
 .cnt-real { color: #ffb3b3; } .cnt-add { color: #a8e6b0; } .cnt-del { color: #d9a8e6; }
-.cnt-ign { color: #ffe28a; } .cnt-id { color: #8a8a8a; }
+.cnt-ign { color: #ffe28a; } .cnt-id { color: #8a8a8a; } .cnt-err { color: #ff9d9d; font-weight: 700; }
 .aut { color: #9a9a9a; }
 .aut .a-add { color: #7bd88a; } .aut .a-del { color: #ff7b7b; } .aut .a-chg { color: #7fb3d9; }
 .ifgroup { color: #8a8a8a; font-size: 11px; text-transform: uppercase; letter-spacing: .5px;
@@ -270,12 +278,14 @@ def _row(o_no, o_txt, n_no, n_txt, mode):
 
 
 # status -> (tree marker, marker css class, section css class for badge toggling)
+# 'error' has no body.hide-* CSS rule on purpose: it can never be hidden
 _TREE = {
     'real-change':    ('≠', 't-real', 'sec-real'),   # ≠
     'ignorable-only': ('≈', 't-ign',  'sec-ign'),    # ≈ minor
     'added':          ('+',      't-add',  'sec-add'),
     'deleted':        ('−', 't-del',  'sec-del'),    # −
     'identical':      ('=',      't-id',   'sec-id'),
+    'error':          ('!',      't-err',  'sec-err'),
 }
 # status -> (display label, tag css class); terms follow common compare-tool
 # convention (git: Modified/Added/Deleted, Beyond Compare: Unimportant, Identical)
@@ -284,11 +294,14 @@ _LABEL = {
     'ignorable-only': ('Unimportant', 'tag-ign'),
     'added':          ('Added',       'tag-add'),
     'deleted':        ('Deleted',     'tag-del'),
+    'error':          ('Error',       'tag-err'),
 }
-_PRIO = {'real-change': 4, 'ignorable-only': 3, 'added': 2, 'deleted': 2, 'identical': 1}
+_PRIO = {'error': 5, 'real-change': 4, 'ignorable-only': 3, 'added': 2, 'deleted': 2,
+         'identical': 1}
 # tree-marker tooltips (folder tree has no legend line; hover explains)
 _STATUS_TITLE = {'real-change': 'Modified', 'ignorable-only': 'Unimportant (noise only)',
-                 'added': 'Added', 'deleted': 'Deleted', 'identical': 'Identical'}
+                 'added': 'Added', 'deleted': 'Deleted', 'identical': 'Identical',
+                 'error': 'Error — NOT compared'}
 
 # --- grouping by model / SWC (Embedded Coder AUTOSAR naming convention) ---
 
@@ -297,7 +310,8 @@ SHARED_GROUP = 'Shared / other'
 _ARXML_SPLIT_RE = re.compile(
     r'(.+)_(component|datatypes?|interfaces?|implementation|behavior|timing)$',
     re.IGNORECASE)
-_DETAIL_ORDER = {'real-change': 0, 'ignorable-only': 1, 'added': 2, 'deleted': 3}
+_DETAIL_ORDER = {'error': -1, 'real-change': 0, 'ignorable-only': 1, 'added': 2,
+                 'deleted': 3}
 
 
 def _stem(rel):
@@ -365,11 +379,12 @@ def _detail_order(rels, results):
 def _counts_html(rels, results):
     """Colored per-status count spans for one model group + raw counts."""
     c = {'real-change': 0, 'ignorable-only': 0, 'added': 0, 'deleted': 0,
-         'identical': 0}
+         'identical': 0, 'error': 0}
     for rel in rels:
         c[results[rel]['status']] += 1
     bits = []
-    for key, label, cls in (('real-change', 'Modified', 'cnt-real'),
+    for key, label, cls in (('error', 'Error', 'cnt-err'),
+                            ('real-change', 'Modified', 'cnt-real'),
                             ('added', 'Added', 'cnt-add'),
                             ('deleted', 'Deleted', 'cnt-del'),
                             ('ignorable-only', 'Unimportant', 'cnt-ign')):
@@ -637,12 +652,36 @@ def _file_open(anchor, rel, status, extra='', expanded=False):
                     _esc(rel), tag, label, extra))
 
 
+def _error_banner(results):
+    """Red top-of-report banner listing every path that was NOT compared.
+    Empty string when the scan was complete."""
+    errs = [(rel, r) for rel, r in sorted(results.items())
+            if r['status'] == 'error']
+    if not errs:
+        return ''
+    lines = []
+    for rel, r in errs:
+        for note in r['notes']:
+            lines.append('<div><code>{}</code> &mdash; {}</div>'.format(
+                _esc(rel), _esc(note)))
+    return ('<div class="errbox"><div class="errtitle">&#9888; COMPARE '
+            'INCOMPLETE &mdash; {} path(s) could NOT be compared</div>{}'
+            '<div>Treat every path above as potentially changed; this report '
+            'does not cover them.</div></div>'.format(len(errs), ''.join(lines)))
+
+
 def _file_section(rel, results, old_root, new_root, anchors):
     """One collapsible detail section for a non-identical file."""
     r = results[rel]
     status = r['status']
     parts = []
-    if status == 'real-change':
+    if status == 'error':
+        parts.append(_file_open(anchors[rel], rel, 'error', expanded=True))
+        parts.append('<div class="filenote">NOT compared &mdash; treat as '
+                     'potentially changed.</div>')
+        for note in r['notes']:
+            parts.append('<div class="filenote">{}</div>'.format(_esc(note)))
+    elif status == 'real-change':
         hunks = r['hunks'] if not r['binary'] else []
         n_real = sum(1 for h in hunks if h['kind'] == 'real')
         n_moved = sum(1 for h in hunks if h['kind'] == 'moved')
@@ -705,6 +744,20 @@ def _file_section(rel, results, old_root, new_root, anchors):
     return ''.join(parts)
 
 
+def _safe_file_section(rel, results, old_root, new_root, anchors):
+    """Fail-safe wrapper: rendering one file (which re-reads it from disk)
+    must not kill the whole report -- e.g. the file was deleted or locked
+    between scan and render. The failure stays loud: an error section takes
+    the file's place."""
+    try:
+        return _file_section(rel, results, old_root, new_root, anchors)
+    except Exception as e:
+        return (_file_open(anchors[rel], rel, 'error', expanded=True)
+                + '<div class="filenote">Rendering failed &mdash; file NOT '
+                  'shown, treat as potentially changed: {}: {}</div>'
+                  '</div></details>'.format(_esc(type(e).__name__), _esc(str(e))))
+
+
 def build_arxml_report(results, old_root, new_root):
     """Compact ARXML-update report: did the AUTOSAR model change, and how.
 
@@ -712,11 +765,15 @@ def build_arxml_report(results, old_root, new_root):
     ignored. Returns None when no arxml file carries a real update
     (real-change / added / deleted) -- the caller then writes no file, so
     the report's very existence signals "arxml updated". Noise-only
-    differences (UUIDs, timestamps, comments, whitespace) do not count."""
-    ax = {rel: r for rel, r in results.items() if ruleset_for(rel) == 'arxml'}
+    differences (UUIDs, timestamps, comments, whitespace) do not count.
+    Exception: 'error' entries (any extension -- a failed folder listing
+    could hide arxml files) always force a report with a loud banner; an
+    incomplete compare must never look like "no update"."""
+    ax = {rel: r for rel, r in results.items()
+          if r['status'] == 'error' or ruleset_for(rel) == 'arxml'}
     updated = {rel: r for rel, r in ax.items()
                if r['status'] in ('real-change', 'added', 'deleted')}
-    if not updated:
+    if not updated and not any(r['status'] == 'error' for r in ax.values()):
         return None
 
     counts = summarize(ax)
@@ -729,11 +786,18 @@ def build_arxml_report(results, old_root, new_root):
     parts.append('<div class="meta">OLD <code>{}</code> &rarr; NEW <code>{}</code>'
                  ' &middot; {}</div>'.format(
                      _esc(str(old_root)), _esc(str(new_root)), now))
+    parts.append(_error_banner(ax))
+    badges = []
     bits = ['{} {}'.format(counts[key], label)
             for key, label in (('real-change', 'modified'), ('added', 'added'),
                                ('deleted', 'deleted')) if counts[key]]
-    parts.append('<div class="summary"><span class="badge b-real">ARXML '
-                 'updated: {}</span></div>'.format(_esc(', '.join(bits))))
+    if bits:
+        badges.append('<span class="badge b-real">ARXML updated: {}</span>'
+                      .format(_esc(', '.join(bits))))
+    if counts['error']:
+        badges.append('<span class="badge b-err">{} error(s) &mdash; '
+                      'incomplete</span>'.format(counts['error']))
+    parts.append('<div class="summary">{}</div>'.format(''.join(badges)))
     if counts['ignorable-only']:
         parts.append('<div class="hint">{} file(s) with noise-only differences '
                      '(UUIDs / timestamps / comments / whitespace) not listed.'
@@ -741,23 +805,24 @@ def build_arxml_report(results, old_root, new_root):
 
     sign = {'real-change': ('if-chg', '~'), 'added': ('if-add', '+'),
             'deleted': ('if-del', '−')}
-    parts.append('<h2>Updated files</h2><div class="iflist">')
-    for rel in sorted(updated):
-        r = updated[rel]
-        cls, s = sign[r['status']]
-        extra = ''
-        if r['status'] == 'real-change':
-            if r['binary']:
-                desc = 'binary change'
-            else:
-                n_real = sum(1 for h in r['hunks'] if h['kind'] == 'real')
-                n_moved = sum(1 for h in r['hunks'] if h['kind'] == 'moved')
-                desc = '{} hunk(s){}'.format(
-                    n_real, ', {} moved'.format(n_moved) if n_moved else '')
-            extra = ' <span class="kinds">{}</span>'.format(_esc(desc))
-        parts.append('<div><span class="{}">{}</span> {}{}</div>'.format(
-            cls, s, _esc(rel), extra))
-    parts.append('</div>')
+    if updated:
+        parts.append('<h2>Updated files</h2><div class="iflist">')
+        for rel in sorted(updated):
+            r = updated[rel]
+            cls, s = sign[r['status']]
+            extra = ''
+            if r['status'] == 'real-change':
+                if r['binary']:
+                    desc = 'binary change'
+                else:
+                    n_real = sum(1 for h in r['hunks'] if h['kind'] == 'real')
+                    n_moved = sum(1 for h in r['hunks'] if h['kind'] == 'moved')
+                    desc = '{} hunk(s){}'.format(
+                        n_real, ', {} moved'.format(n_moved) if n_moved else '')
+                extra = ' <span class="kinds">{}</span>'.format(_esc(desc))
+            parts.append('<div><span class="{}">{}</span> {}{}</div>'.format(
+                cls, s, _esc(rel), extra))
+        parts.append('</div>')
 
     parts.append(_autosar_section(ax, {}))
     parts.append('</body></html>')
@@ -775,7 +840,11 @@ def build_report(results, old_root, new_root):
     parts.append('<div class="meta">OLD <code>{}</code> &rarr; NEW <code>{}</code>'
                  ' &middot; {}</div>'.format(
                      _esc(str(old_root)), _esc(str(new_root)), now))
-    parts.append('<div class="summary">'
+    parts.append(_error_banner(results))
+    # error badge is not toggleable on purpose: errors can never be hidden
+    err_badge = ('<span class="badge b-err">{error} Error</span>'.format(**counts)
+                 if counts['error'] else '')
+    parts.append('<div class="summary">' + err_badge +
                  '<span class="badge b-real" onclick="tg(this,\'real\')">{real-change} Modified</span>'
                  '<span class="badge b-ign off" onclick="tg(this,\'ign\')">{ignorable-only} Unimportant</span>'
                  '<span class="badge b-add" onclick="tg(this,\'add\')">{added} Added</span>'
@@ -806,7 +875,8 @@ def build_report(results, old_root, new_root):
         parts.append('<h2>Folder tree</h2>')
         parts.append('<div class="tree">{}</div>'.format(_tree_html(results, anchors)))
 
-    if not counts['real-change'] and not counts['added'] and not counts['deleted']:
+    if (not counts['real-change'] and not counts['added']
+            and not counts['deleted'] and not counts['error']):
         parts.append('<p>No real changes. All differences are ignorable '
                      '(comments / renames / UUIDs / timestamps / whitespace).</p>')
 
@@ -830,18 +900,18 @@ def build_report(results, old_root, new_root):
                 continue
             counts_html, c = _counts_html(rels, results)
             # groups without a single real change start collapsed so a big
-            # report opens on what matters
-            opn = ' open' if c['real-change'] else ''
+            # report opens on what matters (errors count as "matters")
+            opn = ' open' if c['real-change'] or c['error'] else ''
             parts.append('<details class="model" id="{}" data-m="{}"{}>'
                          '<summary>{} <span class="mcounts">{}</span></summary>'
                          '<div class="mbody">'.format(model_anchors[m], _esc(m),
                                                       opn, _esc(m), counts_html))
             for rel in drels:
-                parts.append(_file_section(rel, results, old_root, new_root, anchors))
+                parts.append(_safe_file_section(rel, results, old_root, new_root, anchors))
             parts.append('</div></details>')
     else:
         for rel in detail_files:
-            parts.append(_file_section(rel, results, old_root, new_root, anchors))
+            parts.append(_safe_file_section(rel, results, old_root, new_root, anchors))
 
     if identical:
         parts.append('<div class="sec-id"><h2>Identical files</h2><ul class="files">')

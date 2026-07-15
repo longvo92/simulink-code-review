@@ -10,14 +10,16 @@ So sánh 2 thư mục codegen AUTOSAR (MATLAB/Simulink) — lọc noise, chỉ h
 python -m compare_tool <thu_muc_gen_cu> <thu_muc_gen_moi> [--report out.html]
 ```
 
-Scan xong xuất HTML report tự chứa (mặc định `compare_report.html`), mở bằng browser bất kỳ, gửi team được. Exit code 1 nếu có thay đổi thật — dùng cho CI.
+Scan xong xuất HTML report tự chứa (mặc định `compare_report.html`), mở bằng browser bất kỳ, gửi team được.
+
+Exit code: `0` = không có thay đổi thật, `1` = có thay đổi thật (CI gate), `2` = **compare INCOMPLETE** — có path không list/đọc/so sánh được (folder mất quyền, file bị lock bởi process khác, long-path...). Path lỗi không bao giờ biến mất im lặng: hiện `!!` ở terminal, banner đỏ + section `Error` trong report, và file dưới folder lỗi **không** bị đoán bừa là added/deleted. `--exit-zero` không che được exit 2 — compare thiếu file không bao giờ được phép nhìn như thành công.
 
 | Flag | Ý nghĩa |
 |---|---|
-| `--report out.html` | Đường dẫn file report (mặc định `compare_report.html`) |
+| `--report out.html` | Đường dẫn file report (mặc định `compare_report.html`). File report cũ (nếu có) bị xóa **trước khi** scan — run chết giữa chừng thì không còn report cũ nằm lại giả làm kết quả mới |
 | `--exclude PATTERN` | Bỏ qua file khớp glob (đường dẫn tương đối hoặc tên file), lặp lại được. Vd: `--exclude compare_report.html` |
-| `--exit-zero` | Luôn exit 0 kể cả có thay đổi thật (chế độ report-only cho pipeline) |
-| `--arxml-only` | Chỉ scan `.arxml`/`.xml`, xuất report gọn (mặc định `arxml_update.html`): verdict + danh sách file updated + AUTOSAR changes. Không có thay đổi thật (chỉ noise/identical) → **không ghi file** — sự tồn tại của file chính là tín hiệu "có update" cho pipeline |
+| `--exit-zero` | Luôn exit 0 kể cả có thay đổi thật (chế độ report-only cho pipeline). Lỗi compare vẫn exit 2 |
+| `--arxml-only` | Chỉ scan `.arxml`/`.xml`, xuất report gọn (mặc định `arxml_update.html`): verdict + danh sách file updated + AUTOSAR changes. Không có thay đổi thật (chỉ noise/identical) → **không ghi file** — sự tồn tại của file chính là tín hiệu "có update" cho pipeline. Ngoại lệ: có lỗi compare → **luôn ghi report** kèm banner đỏ (compare thiếu file không được phép nhìn như "không có update") |
 
 ## Noise được bỏ qua (ignorable)
 

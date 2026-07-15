@@ -36,8 +36,16 @@ def main(argv=None):
                          'file name); repeatable. Example: --exclude compare_report.html')
     ap.add_argument('--exit-zero', action='store_true',
                     help='always exit 0 even when real changes exist '
-                         '(report-only mode for CI pipelines)')
+                         '(report-only mode for CI pipelines); compare '
+                         'errors still exit 2 -- an incomplete compare '
+                         'must never look green')
     args = ap.parse_args(argv)
+    # Windows consoles often run a legacy codepage (cp1252/cp437) that cannot
+    # encode every character in codegen identifiers/paths; a print must never
+    # kill the run, so degrade unencodable characters instead of raising
+    for stream in (sys.stdout, sys.stderr):
+        if hasattr(stream, 'reconfigure'):
+            stream.reconfigure(errors='replace')
     if args.report is None:
         args.report = 'arxml_update.html' if args.arxml_only else 'compare_report.html'
 
@@ -46,6 +54,13 @@ def main(argv=None):
     for p, name in ((old_root, 'old_dir'), (new_root, 'new_dir')):
         if not p.is_dir():
             ap.error('{} is not a directory: {}'.format(name, p))
+
+    out = Path(args.report)
+    # delete a leftover report from an earlier run BEFORE scanning: if this
+    # run dies, a stale report must not pass for this run's result
+    # (--arxml-only treats the file's very existence as the update signal)
+    if out.exists():
+        out.unlink()
 
     print('Scanning...')
 
@@ -59,7 +74,15 @@ def main(argv=None):
                    include=include)
     counts = summarize(results)
     print('Summary: {real-change} modified, {ignorable-only} unimportant, '
-          '{added} added, {deleted} deleted, {identical} identical'.format(**counts))
+          '{added} added, {deleted} deleted, {identical} identical, '
+          '{error} error(s)'.format(**counts))
+    if counts['error']:
+        print('!! COMPARE INCOMPLETE: {} path(s) could NOT be compared -- '
+              'treat them as potentially changed:'.format(counts['error']))
+        for rel, r in sorted(results.items()):
+            if r['status'] == 'error':
+                for note in r['notes']:
+                    print('  !! {} -- {}'.format(rel, note))
     for rel, r in sorted(results.items()):
         if r['status'] == 'real-change':
             n_real = sum(1 for h in r['hunks'] if h['kind'] == 'real')
@@ -114,7 +137,6 @@ def main(argv=None):
         for rel, n in rte_removed:
             print('  - {} in {}'.format(n, rel))
 
-    out = Path(args.report)
     if args.arxml_only:
         page = build_arxml_report(results, old_root, new_root)
         if page is None:
@@ -126,6 +148,10 @@ def main(argv=None):
         out.write_text(build_report(results, old_root, new_root), encoding='utf-8')
         print('Report written: {}'.format(out.resolve()))
 
+    if counts['error']:
+        # fail-safe: an incomplete compare must never look green, even with
+        # --exit-zero -- an uncompared file could hide a real change
+        return 2
     if args.exit_zero:
         return 0
     # exit code 1 when real differences exist (CI gate)

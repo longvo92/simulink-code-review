@@ -1,6 +1,7 @@
 """Walk two folder trees, pair files by relative path, compare each pair."""
 
 import fnmatch
+import os
 from pathlib import Path
 
 from . import arxml_rules, c_rules
@@ -25,12 +26,32 @@ def looks_binary(path):
         return b'\0' in f.read(8192)
 
 
-def list_files(root):
+def list_files(root, errors=None):
+    """All files under root as relative posix paths.
+
+    Fail-safe: Path.rglob (used before) swallows PermissionError silently, so
+    a locked or unreadable folder would VANISH from the compare without a
+    trace. os.walk lets us capture every listing error: each one is appended
+    to `errors` as (rel_path, message), or re-raised when no list is given.
+    A file missing from the compare must never be silent."""
     root = Path(root)
     out = set()
-    for p in root.rglob('*'):
-        if p.is_file() and not (set(p.relative_to(root).parts[:-1]) & SKIP_DIRS):
-            out.add(p.relative_to(root).as_posix())
+
+    def on_error(err):
+        if errors is None:
+            raise err
+        p = getattr(err, 'filename', None)
+        try:
+            rel = Path(p).relative_to(root).as_posix() if p else str(root)
+        except ValueError:
+            rel = str(p)
+        errors.append((rel, '{}: {}'.format(type(err).__name__, err)))
+
+    for dirpath, dirnames, filenames in os.walk(str(root), onerror=on_error):
+        dirnames[:] = [d for d in dirnames if d not in SKIP_DIRS]
+        rel_dir = Path(dirpath).relative_to(root)
+        for name in filenames:
+            out.add((rel_dir / name).as_posix())
     return out
 
 
@@ -98,36 +119,78 @@ def _matches(rel, patterns):
                for pat in patterns)
 
 
+def _error_result(msg):
+    """Fail-safe placeholder for a path that could NOT be compared. Loud by
+    design: counted separately, listed in terminal and report, exit code 2.
+    Treat every such path as potentially changed."""
+    return {'status': 'error', 'hunks': [], 'renames': {}, 'notes': [msg],
+            'binary': False}
+
+
 def scan(old_root, new_root, progress=None, exclude=(), include=()):
     """Compare two trees. Returns {rel_path: result} sorted by path.
     result: {status, hunks, renames, notes, binary[, ifaces]}.
+    status 'error' = the path could not be listed or compared (see notes).
     exclude: glob patterns (relative path or file name) to skip entirely.
     include: when non-empty, only paths matching one of these globs are
     compared (exclude still applies on top)."""
-    old_files = list_files(old_root)
-    new_files = list_files(new_root)
+    old_errors, new_errors = [], []
+    old_files = list_files(old_root, old_errors)
+    new_files = list_files(new_root, new_errors)
+    results = {}
+    # listing errors are NEVER filtered by include/exclude: an unlisted
+    # folder could hide files of any type, so it must always surface
+    for side, errs in (('OLD', old_errors), ('NEW', new_errors)):
+        for rel, msg in errs:
+            note = 'folder listing failed on {} side: {}'.format(side, msg)
+            if rel in results:
+                results[rel]['notes'].append(note)
+            else:
+                results[rel] = _error_result(note)
+    def under_failed(rel, errs):
+        """True when rel lives inside a folder whose listing failed on the
+        given side: the file may exist there unseen, so a one-sided file
+        cannot be trusted as added/deleted."""
+        return any(d in ('.', '') or rel == d or rel.startswith(d + '/')
+                   for d, _msg in errs)
+
     all_paths = sorted(p for p in old_files | new_files
                        if (not include or _matches(p, include))
                        and not _matches(p, exclude))
-    results = {}
     for idx, rel in enumerate(all_paths):
-        if rel in old_files and rel in new_files:
-            results[rel] = compare_file(old_root, new_root, rel)
-        elif rel in new_files:
-            r = {'status': 'added', 'hunks': [], 'renames': {}, 'notes': [], 'binary': False}
-            r.update(_single_info(new_root, rel, is_added=True))
-            results[rel] = r
-        else:
-            r = {'status': 'deleted', 'hunks': [], 'renames': {}, 'notes': [], 'binary': False}
-            r.update(_single_info(old_root, rel, is_added=False))
-            results[rel] = r
+        try:
+            if rel in old_files and rel in new_files:
+                results[rel] = compare_file(old_root, new_root, rel)
+            elif rel in new_files:
+                if under_failed(rel, old_errors):
+                    results[rel] = _error_result(
+                        'not compared: OLD folder listing failed -- cannot '
+                        'tell whether this file was added or changed')
+                else:
+                    r = {'status': 'added', 'hunks': [], 'renames': {}, 'notes': [], 'binary': False}
+                    r.update(_single_info(new_root, rel, is_added=True))
+                    results[rel] = r
+            else:
+                if under_failed(rel, new_errors):
+                    results[rel] = _error_result(
+                        'not compared: NEW folder listing failed -- cannot '
+                        'tell whether this file was deleted or is unreadable')
+                else:
+                    r = {'status': 'deleted', 'hunks': [], 'renames': {}, 'notes': [], 'binary': False}
+                    r.update(_single_info(old_root, rel, is_added=False))
+                    results[rel] = r
+        except Exception as e:  # fail-safe: one bad file must not kill the
+            # run NOR disappear -- it becomes a loud 'error' entry instead
+            results[rel] = _error_result(
+                'compare failed: {}: {}'.format(type(e).__name__, e))
         if progress:
             progress(idx + 1, len(all_paths), rel)
     return results
 
 
 def summarize(results):
-    counts = {'identical': 0, 'ignorable-only': 0, 'real-change': 0, 'added': 0, 'deleted': 0}
+    counts = {'identical': 0, 'ignorable-only': 0, 'real-change': 0,
+              'added': 0, 'deleted': 0, 'error': 0}
     for r in results.values():
         counts[r['status']] += 1
     return counts
