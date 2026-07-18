@@ -19,7 +19,7 @@ Exit code: `0` = không có thay đổi thật, `1` = có thay đổi thật (CI
 | `--report out.html` | Đường dẫn file report (mặc định `compare_report.html`). File report cũ (nếu có) bị xóa **trước khi** scan — run chết giữa chừng thì không còn report cũ nằm lại giả làm kết quả mới |
 | `--exclude PATTERN` | Bỏ qua file khớp glob (đường dẫn tương đối hoặc tên file), lặp lại được. Vd: `--exclude compare_report.html` |
 | `--exit-zero` | Luôn exit 0 kể cả có thay đổi thật (chế độ report-only cho pipeline). Lỗi compare vẫn exit 2 |
-| `--arxml-only` | Chỉ scan `.arxml`/`.xml`, xuất report gọn (mặc định `arxml_update.html`): verdict + danh sách file updated + AUTOSAR changes. Không có thay đổi thật (chỉ noise/identical) → **không ghi file** — sự tồn tại của file chính là tín hiệu "có update" cho pipeline. Ngoại lệ: có lỗi compare → **luôn ghi report** kèm banner đỏ (compare thiếu file không được phép nhìn như "không có update") |
+| `--arxml-only` | Chỉ scan `.arxml`/`.xml`/`.a2l`, xuất report gọn (mặc định `arxml_update.html`): verdict **riêng cho từng loại** (badge `ARXML updated: …` / `A2L updated: …`, hoặc `no changes` / `no files found`) + danh sách file updated tách theo loại + AUTOSAR/A2L changes. Report **luôn được ghi** — không có thay đổi thật thì report ghi rõ "No ARXML or A2L updates" thay vì im lặng bỏ qua file (file thiếu không phân biệt được với run chết giữa chừng). Có lỗi compare → banner đỏ + badge incomplete |
 
 ## Noise được bỏ qua (ignorable)
 

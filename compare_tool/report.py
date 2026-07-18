@@ -26,6 +26,7 @@ h1 { font-size: 20px; } h2 { font-size: 15px; margin: 28px 0 6px; color: #e8e8e8
 .b-id { background: #333; color: #aaa; } .b-add { background: #2b5232; color: #a8e6b0; }
 .b-del { background: #4a2b52; color: #d9a8e6; }
 .b-err { background: #7a1f1f; color: #ffc2c2; border-color: #b04a4a; cursor: default; }
+.b-ok { background: #2b5232; color: #a8e6b0; cursor: default; }
 .errbox { background: #4a1d1d; border: 1px solid #b04a4a; border-radius: 6px;
           padding: 10px 14px; margin: 14px 0 20px; color: #ffd6d6; font-size: 13px; }
 .errbox .errtitle { font-weight: 700; font-size: 14px; margin-bottom: 6px; }
@@ -781,41 +782,58 @@ def _safe_file_section(rel, results, old_root, new_root, anchors):
 
 
 def build_arxml_report(results, old_root, new_root):
-    """Compact ARXML-update report: did the AUTOSAR model change, and how.
+    """Compact ARXML / A2L update report: did the AUTOSAR model or the
+    calibration surface change, and how.
 
-    Only .arxml/.xml files are considered; other files in `results` are
-    ignored. Returns None when no arxml file carries a real update
-    (real-change / added / deleted) -- the caller then writes no file, so
-    the report's very existence signals "arxml updated". Noise-only
-    differences (UUIDs, timestamps, comments, whitespace) do not count.
-    Exception: 'error' entries (any extension -- a failed folder listing
-    could hide arxml files) always force a report with a loud banner; an
-    incomplete compare must never look like "no update"."""
+    Only .arxml/.xml/.a2l files are considered; other files in `results`
+    are ignored ('error' entries of any extension always count -- a failed
+    folder listing could hide arxml/a2l files, and an incomplete compare
+    must never look like "no update"). The page is ALWAYS built: each file
+    type gets its own verdict badge, and "no changes" is stated explicitly
+    instead of being signaled by a missing report -- a missing file is
+    indistinguishable from a run that never happened. Noise-only
+    differences (UUIDs, timestamps, comments, whitespace) do not count as
+    updates."""
     ax = {rel: r for rel, r in results.items()
-          if r['status'] == 'error' or ruleset_for(rel) == 'arxml'}
-    updated = {rel: r for rel, r in ax.items()
-               if r['status'] in ('real-change', 'added', 'deleted')}
-    if not updated and not any(r['status'] == 'error' for r in ax.values()):
-        return None
+          if r['status'] == 'error' or ruleset_for(rel) in ('arxml', 'a2l')}
+    types = (('ARXML', 'arxml'), ('A2L', 'a2l'))
+    by_type = {label: {rel: r for rel, r in ax.items() if ruleset_for(rel) == rs}
+               for label, rs in types}
 
     counts = summarize(ax)
     now = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
     parts = []
     parts.append('<!DOCTYPE html><html><head><meta charset="utf-8">'
-                 '<title>ARXML Update Report</title><style>{}</style></head>'
+                 '<title>ARXML / A2L Update Report</title><style>{}</style></head>'
                  '<body>'.format(_CSS))
-    parts.append('<h1>ARXML Update Report</h1>')
+    parts.append('<h1>ARXML / A2L Update Report</h1>')
     parts.append('<div class="meta">OLD <code>{}</code> &rarr; NEW <code>{}</code>'
                  ' &middot; {}</div>'.format(
                      _esc(str(old_root)), _esc(str(new_root)), now))
+    parts.append('<div class="meta">{}</div>'.format(
+        ' &middot; '.join('{} {} file(s) compared'.format(len(by_type[label]), label)
+                          for label, _rs in types)))
     parts.append(_error_banner(ax))
     badges = []
-    bits = ['{} {}'.format(counts[key], label)
-            for key, label in (('real-change', 'modified'), ('added', 'added'),
-                               ('deleted', 'deleted')) if counts[key]]
-    if bits:
-        badges.append('<span class="badge b-real">ARXML updated: {}</span>'
-                      .format(_esc(', '.join(bits))))
+    for label, _rs in types:
+        c = summarize(by_type[label])
+        bits = ['{} {}'.format(c[key], word)
+                for key, word in (('real-change', 'modified'), ('added', 'added'),
+                                  ('deleted', 'deleted')) if c[key]]
+        if bits:
+            badges.append('<span class="badge b-real">{} updated: {}</span>'
+                          .format(label, _esc(', '.join(bits))))
+        elif c['error']:
+            # per-type "no changes" would be a false claim next to the
+            # error banner; the global error badge carries the count
+            badges.append('<span class="badge b-err">{}: incomplete</span>'
+                          .format(label))
+        elif not by_type[label]:
+            badges.append('<span class="badge b-id">{}: no files found</span>'
+                          .format(label))
+        else:
+            badges.append('<span class="badge b-ok">{}: no changes</span>'
+                          .format(label))
     if counts['error']:
         badges.append('<span class="badge b-err">{} error(s) &mdash; '
                       'incomplete</span>'.format(counts['error']))
@@ -827,8 +845,14 @@ def build_arxml_report(results, old_root, new_root):
 
     sign = {'real-change': ('if-chg', '~'), 'added': ('if-add', '+'),
             'deleted': ('if-del', '−')}
-    if updated:
-        parts.append('<h2>Updated files</h2><div class="iflist">')
+    updated_any = False
+    for label, _rs in types:
+        updated = {rel: r for rel, r in by_type[label].items()
+                   if r['status'] in ('real-change', 'added', 'deleted')}
+        if not updated:
+            continue
+        updated_any = True
+        parts.append('<h2>Updated {} files</h2><div class="iflist">'.format(label))
         for rel in sorted(updated):
             r = updated[rel]
             cls, s = sign[r['status']]
@@ -845,6 +869,11 @@ def build_arxml_report(results, old_root, new_root):
             parts.append('<div><span class="{}">{}</span> {}{}</div>'.format(
                 cls, s, _esc(rel), extra))
         parts.append('</div>')
+
+    if not updated_any and not counts['error']:
+        parts.append('<p>No ARXML or A2L updates &mdash; every compared file '
+                     'is identical or differs only in noise (UUIDs / '
+                     'timestamps / comments / whitespace).</p>')
 
     parts.append(_autosar_section(ax, {}))
     parts.append('</body></html>')

@@ -26,11 +26,12 @@ def main(argv=None):
                     help='HTML report output path (default: compare_report.html, '
                          'or arxml_update.html with --arxml-only)')
     ap.add_argument('--arxml-only', action='store_true',
-                    help='compare only ARXML/XML files and write a compact '
-                         '"what changed in the AUTOSAR model" report instead of '
-                         'the full diff report; when nothing real changed, no '
-                         'report file is written (the file\'s existence itself '
-                         'signals an update)')
+                    help='compare only ARXML/XML and A2L files and write a '
+                         'compact "what changed in the AUTOSAR model and '
+                         'calibration surface" report instead of the full '
+                         'diff report; the report is ALWAYS written -- when '
+                         'nothing real changed it states "no changes" '
+                         'explicitly per file type')
     ap.add_argument('--exclude', metavar='PATTERN', action='append', default=[],
                     help='skip files matching this glob (relative path or bare '
                          'file name); repeatable. Example: --exclude compare_report.html')
@@ -58,7 +59,6 @@ def main(argv=None):
     out = Path(args.report)
     # delete a leftover report from an earlier run BEFORE scanning: if this
     # run dies, a stale report must not pass for this run's result
-    # (--arxml-only treats the file's very existence as the update signal)
     if out.exists():
         out.unlink()
 
@@ -69,7 +69,7 @@ def main(argv=None):
             print('  {}/{} {}'.format(done, total, rel))
 
     include = tuple('*' + ext for ext, rs in RULES.items()
-                    if rs == 'arxml') if args.arxml_only else ()
+                    if rs in ('arxml', 'a2l')) if args.arxml_only else ()
     results = scan(old_root, new_root, progress=progress, exclude=args.exclude,
                    include=include)
     counts = summarize(results)
@@ -147,12 +147,17 @@ def main(argv=None):
             print('  - {} ({}) in {}'.format(n, kind, rel))
 
     if args.arxml_only:
-        page = build_arxml_report(results, old_root, new_root)
-        if page is None:
-            print('No ARXML updates -- report file not written.')
+        # ALWAYS written: "no changes" must be an explicit statement, never
+        # a silently absent file (indistinguishable from a run that died)
+        out.write_text(build_arxml_report(results, old_root, new_root),
+                       encoding='utf-8')
+        if counts['real-change'] or counts['added'] or counts['deleted']:
+            print('ARXML/A2L update report written: {}'.format(out.resolve()))
+        elif counts['error']:
+            print('ARXML/A2L compare incomplete -- report written: {}'
+                  .format(out.resolve()))
         else:
-            out.write_text(page, encoding='utf-8')
-            print('ARXML update report written: {}'.format(out.resolve()))
+            print('No ARXML/A2L changes -- report written: {}'.format(out.resolve()))
     else:
         out.write_text(build_report(results, old_root, new_root), encoding='utf-8')
         print('Report written: {}'.format(out.resolve()))
