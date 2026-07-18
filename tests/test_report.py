@@ -313,47 +313,67 @@ class TestModelReport(unittest.TestCase):
 
 
 class TestArxmlOnlyReport(unittest.TestCase):
-    """Compact ARXML-update report: file list + AUTOSAR summary; None (no
-    file written) when no arxml carries a real change."""
+    """Compact ARXML / A2L update report: per-type verdict badges + updated
+    file lists + AUTOSAR summary; ALWAYS built -- "no changes" is stated
+    explicitly, never signaled by a missing file."""
 
     @classmethod
     def setUpClass(cls):
-        cls.results = scan(FIX / 'old', FIX / 'new', include=['*.arxml', '*.xml'])
+        cls.results = scan(FIX / 'old', FIX / 'new',
+                           include=['*.arxml', '*.xml', '*.a2l'])
         cls.page = build_arxml_report(cls.results, FIX / 'old', FIX / 'new')
 
-    def test_include_filter_limits_scan_to_arxml(self):
+    def test_include_filter_limits_scan_to_arxml_and_a2l(self):
         self.assertIn('arxml/real_change.arxml', self.results)
+        self.assertIn('a2l/cal.a2l', self.results)
         self.assertNotIn('src/real_change.c', self.results)
 
-    def test_page_lists_updated_arxml_files(self):
-        self.assertIn('ARXML Update Report', self.page)
+    def test_page_lists_updated_files_per_type(self):
+        self.assertIn('ARXML / A2L Update Report', self.page)
+        self.assertIn('Updated ARXML files', self.page)
         self.assertIn('arxml/real_change.arxml', self.page)
         self.assertIn('arxml/iface.arxml', self.page)
+        self.assertIn('Updated A2L files', self.page)
+        self.assertIn('a2l/cal.a2l', self.page)
+
+    def test_per_type_verdict_badges(self):
+        self.assertIn('ARXML updated:', self.page)
+        self.assertIn('A2L updated: 1 modified', self.page)
 
     def test_page_carries_autosar_summary(self):
         self.assertIn('AUTOSAR changes', self.page)
         self.assertIn('+ /Interfaces/If_Torque', self.page)
         self.assertIn('− /Interfaces/If_Diag', self.page)
+        # A2L objects listed by name and kind
+        self.assertIn('+ VehSpd', self.page)
+        self.assertIn('− K_Gain', self.page)
 
     def test_noise_only_files_not_listed(self):
-        files_block = self.page.split('Updated files')[1]
+        files_block = self.page.split('Updated ARXML files')[1]
         self.assertNotIn('uuid_only.arxml', files_block)
         self.assertNotIn('admindata.arxml', files_block)
+        self.assertNotIn('comment_only.a2l', files_block)
         self.assertIn('noise-only differences', self.page)
 
-    def test_none_when_only_noise_changes(self):
+    def test_no_changes_stated_explicitly_when_only_noise(self):
         results = scan(FIX / 'old', FIX / 'new',
-                       exclude=['real_change.arxml', 'iface.arxml'])
-        # C-file real changes present but must not count as arxml update
+                       exclude=['real_change.arxml', 'iface.arxml', 'cal.a2l'])
+        # C-file real changes present but must not count as arxml/a2l update
         self.assertEqual(results['src/real_change.c']['status'], 'real-change')
-        self.assertIsNone(build_arxml_report(results, FIX / 'old', FIX / 'new'))
+        page = build_arxml_report(results, FIX / 'old', FIX / 'new')
+        self.assertIn('ARXML: no changes', page)
+        self.assertIn('A2L: no changes', page)
+        self.assertIn('No ARXML or A2L updates', page)
+        self.assertNotIn('Updated ARXML files', page)
+        self.assertNotIn('Updated A2L files', page)
 
     def test_added_and_deleted_arxml_count_as_update(self):
         results = {'new.arxml': {'status': 'added', 'hunks': [], 'renames': {},
                                  'notes': [], 'binary': False}}
         page = build_arxml_report(results, 'o', 'n')
-        self.assertIn('1 added', page)
+        self.assertIn('ARXML updated: 1 added', page)
         self.assertIn('+</span> new.arxml', page)
+        self.assertIn('A2L: no files found', page)
 
 
 class TestMovedRendering(unittest.TestCase):

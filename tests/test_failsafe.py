@@ -86,15 +86,22 @@ class TestScanErrors(_TreeCase):
         _fill(self.old, {'sub/x.c': 'int x;\n'})
         real_walk = scanner.os.walk
 
-        def bad_walk(top, onerror=None, **kw):
+        # signature must match os.walk(top, topdown, onerror, followlinks)
+        # positionally: on Python 3.8, os.walk recurses into subdirectories
+        # by calling the module-global `walk` name again (not a saved local
+        # reference), so once os.walk is patched, that recursive call lands
+        # on THIS mock too -- with all 4 args positional. A **kw-only
+        # signature blows up there even though the top-level call (from
+        # scanner.py, which uses onerror=...) looks fine.
+        def bad_walk(top, topdown=True, onerror=None, followlinks=False):
             if Path(top) == self.new:
                 onerror(OSError(13, 'Access is denied',
                                 str(Path(top) / 'sub')))
-                for t, d, f in real_walk(top, onerror=onerror, **kw):
+                for t, d, f in real_walk(top, topdown, onerror, followlinks):
                     d[:] = [x for x in d if x != 'sub']
                     yield t, d, f
             else:
-                for item in real_walk(top, onerror=onerror, **kw):
+                for item in real_walk(top, topdown, onerror, followlinks):
                     yield item
 
         with mock.patch.object(scanner.os, 'walk', bad_walk):
@@ -142,10 +149,16 @@ class TestReportErrors(_TreeCase):
         self.assertIn('COMPARE INCOMPLETE', page)
         self.assertIn('error(s)', page)
 
-    def test_arxml_report_still_none_when_clean_and_no_errors(self):
+    def test_arxml_report_states_no_changes_when_clean(self):
+        # never silent: a clean compare still produces a report that SAYS
+        # "no changes" -- a missing file is indistinguishable from a run
+        # that never happened
         results = {'x.arxml': {'status': 'identical', 'hunks': [],
                                'renames': {}, 'notes': [], 'binary': False}}
-        self.assertIsNone(build_arxml_report(results, 'o', 'n'))
+        page = build_arxml_report(results, 'o', 'n')
+        self.assertIn('ARXML: no changes', page)
+        self.assertIn('A2L: no files found', page)
+        self.assertIn('No ARXML or A2L updates', page)
 
 
 class TestMainFailSafe(_TreeCase):
@@ -171,16 +184,20 @@ class TestMainFailSafe(_TreeCase):
             rc, _report, _out = self._run('--exit-zero')
         self.assertEqual(rc, 2)
 
-    def test_stale_arxml_report_deleted_before_scan(self):
+    def test_stale_arxml_report_replaced_with_no_changes_page(self):
         report = Path(self.tmp.name) / 'arxml_update.html'
         report.write_text('stale', encoding='utf-8')
         buf = io.StringIO()
         with contextlib.redirect_stdout(buf):
-            # identical trees, no arxml at all -> no report may remain;
-            # a stale file would falsely signal "model changed"
+            # identical trees, no arxml/a2l at all -> the stale file must
+            # not survive as this run's result; a fresh report is written
+            # that states "no changes" explicitly
             rc = main([str(self.new), str(self.new), '--arxml-only',
                        '--report', str(report)])
-        self.assertFalse(report.exists())
+        page = report.read_text(encoding='utf-8')
+        self.assertNotIn('stale', page)
+        self.assertIn('No ARXML or A2L updates', page)
+        self.assertIn('No ARXML/A2L changes', buf.getvalue())
         self.assertEqual(rc, 0)
 
 
