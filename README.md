@@ -20,6 +20,15 @@ Exit code: `0` = không có thay đổi thật, `1` = có thay đổi thật (CI
 | `--exclude PATTERN` | Bỏ qua file khớp glob (đường dẫn tương đối hoặc tên file), lặp lại được. Vd: `--exclude compare_report.html` |
 | `--exit-zero` | Luôn exit 0 kể cả có thay đổi thật (chế độ report-only cho pipeline). Lỗi compare vẫn exit 2 |
 | `--arxml-only` | Chỉ scan `.arxml`/`.xml`/`.a2l`, xuất report gọn (mặc định `arxml_update.html`): verdict **riêng cho từng loại** (badge `ARXML updated: …` / `A2L updated: …`, hoặc `no changes` / `no files found`) + danh sách file updated tách theo loại + AUTOSAR/A2L changes. Report **luôn được ghi** — không có thay đổi thật thì report ghi rõ "No ARXML or A2L updates" thay vì im lặng bỏ qua file (file thiếu không phân biệt được với run chết giữa chừng). Có lỗi compare → banner đỏ + badge incomplete |
+| `--gui` | Mở cửa sổ GUI (tkinter, stdlib — không server) thay vì chạy terminal. `old_dir`/`new_dir` thành optional, có thì prefill sẵn |
+
+## GUI
+
+```bash
+python -m compare_tool --gui
+```
+
+Đủ mọi mode của CLI: browse chọn OLD/NEW folder, chọn nơi lưu report (để trống → tên mặc định đặt **cạnh** thư mục NEW, tránh report tự scan chính nó lần sau), checkbox ARXML/A2L-only, ô Exclude (glob cách nhau bằng space). Scan chạy thread riêng — cửa sổ không đơ, có progress bar; xong hiện verdict màu (xanh = không đổi, cam = có thay đổi thật, đỏ = COMPARE INCOMPLETE) + log y hệt terminal, nút **Open report** mở HTML trong browser. Chung core `run_compare()` với CLI nên fail-safe semantics giống hệt — worker chết giữa chừng hiện `RUN FAILED` đỏ, không bao giờ ra kết quả nửa vời.
 
 ## Noise được bỏ qua (ignorable)
 
