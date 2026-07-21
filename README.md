@@ -1,26 +1,73 @@
 # CodeGen Compare Tool
 
-So sánh 2 thư mục codegen AUTOSAR (MATLAB/Simulink) — lọc noise, chỉ hiện thay đổi thực sự.
+[![Test](https://github.com/longvo92/codegen-compare-tool/actions/workflows/test.yml/badge.svg)](https://github.com/longvo92/codegen-compare-tool/actions/workflows/test.yml)
+[![Python 3.8+](https://img.shields.io/badge/python-3.8%2B-blue.svg)](https://www.python.org/downloads/)
+[![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 
-**Zero dependency** — chỉ cần Python 3.8+ (stdlib), không pip install, không server.
+Diff two AUTOSAR code-generation output folders (MATLAB/Simulink Embedded Coder) and show **only the changes that matter**.
 
-## Chạy
+Regenerating a Simulink model rewrites timestamps, UUIDs, comment banners and auto-generated variable names even when the behaviour is identical. A plain `git diff` or Beyond Compare run drowns the reviewer in that noise. This tool classifies every hunk as *real* or *ignorable*, then renders a self-contained HTML report with an AUTOSAR-level summary on top of the text diff.
+
+**Zero dependencies** — Python 3.8+ standard library only. No pip install required, no server, no internet access.
+
+- [Install](#install)
+- [Quick start](#quick-start)
+- [Command line](#command-line)
+- [GUI](#gui)
+- [What counts as noise](#what-counts-as-noise)
+- [Moved block detection](#moved-block-detection)
+- [AUTOSAR semantic summary](#autosar-semantic-summary)
+- [Grouping by model / SWC](#grouping-by-model--swc)
+- [HTML report](#html-report)
+- [CI integration](#ci-integration)
+- [Single-file build](#single-file-build)
+- [Development](#development)
+
+## Install
+
+Run straight from a clone — nothing to install:
 
 ```bash
-python -m compare_tool <thu_muc_gen_cu> <thu_muc_gen_moi> [--report out.html]
+git clone https://github.com/longvo92/codegen-compare-tool.git
+cd codegen-compare-tool
+python -m compare_tool --help
 ```
 
-Scan xong xuất HTML report tự chứa (mặc định `compare_report.html`), mở bằng browser bất kỳ, gửi team được.
+Or install it as a command (`compare-tool`):
 
-Exit code: `0` = không có thay đổi thật, `1` = có thay đổi thật (CI gate), `2` = **compare INCOMPLETE** — có path không list/đọc/so sánh được (folder mất quyền, file bị lock bởi process khác, long-path...). Path lỗi không bao giờ biến mất im lặng: hiện `!!` ở terminal, banner đỏ + section `Error` trong report, và file dưới folder lỗi **không** bị đoán bừa là added/deleted. `--exit-zero` không che được exit 2 — compare thiếu file không bao giờ được phép nhìn như thành công.
+```bash
+pip install git+https://github.com/longvo92/codegen-compare-tool.git
+```
 
-| Flag | Ý nghĩa |
+For machines where you cannot install anything, see [Single-file build](#single-file-build).
+
+## Quick start
+
+```bash
+python -m compare_tool <old_gen_folder> <new_gen_folder> [--report out.html]
+```
+
+The scan writes a self-contained HTML report (default `compare_report.html`) that opens in any browser and can be shared as a single file.
+
+Exit codes:
+
+| Code | Meaning |
 |---|---|
-| `--report out.html` | Đường dẫn file report (mặc định `compare_report.html`). File report cũ (nếu có) bị xóa **trước khi** scan — run chết giữa chừng thì không còn report cũ nằm lại giả làm kết quả mới |
-| `--exclude PATTERN` | Bỏ qua file khớp glob (đường dẫn tương đối hoặc tên file), lặp lại được. Vd: `--exclude compare_report.html` |
-| `--exit-zero` | Luôn exit 0 kể cả có thay đổi thật (chế độ report-only cho pipeline). Lỗi compare vẫn exit 2 |
-| `--arxml-only` | Chỉ scan `.arxml`/`.xml`/`.a2l`, xuất report gọn (mặc định `arxml_update.html`): verdict **riêng cho từng loại** (badge `ARXML updated: …` / `A2L updated: …`, hoặc `no changes` / `no files found`) + danh sách file updated tách theo loại + AUTOSAR/A2L changes. Report **luôn được ghi** — không có thay đổi thật thì report ghi rõ "No ARXML or A2L updates" thay vì im lặng bỏ qua file (file thiếu không phân biệt được với run chết giữa chừng). Có lỗi compare → banner đỏ + badge incomplete |
-| `--gui` | Mở cửa sổ GUI (tkinter, stdlib — không server) thay vì chạy terminal. `old_dir`/`new_dir` thành optional, có thì prefill sẵn |
+| `0` | No real changes |
+| `1` | Real changes found (useful as a CI gate) |
+| `2` | **Compare INCOMPLETE** — some path could not be listed, read or compared (permissions, file locked by another process, long paths, …) |
+
+Exit `2` is never silent: the terminal prints `!!`, the report gets a red banner plus an `Error` section, and files under a failed folder are **not** guessed to be added or deleted. `--exit-zero` does not suppress it — an incomplete compare must never look like success.
+
+## Command line
+
+| Flag | Meaning |
+|---|---|
+| `--report out.html` | Report output path (default `compare_report.html`). An existing report at that path is deleted **before** the scan, so a crashed run cannot leave a stale report behind pretending to be the new result |
+| `--exclude PATTERN` | Skip files matching a glob (relative path or bare file name), repeatable. Example: `--exclude compare_report.html` |
+| `--exit-zero` | Always exit 0 even when real changes exist (report-only mode for pipelines). Compare errors still exit 2 |
+| `--arxml-only` | Scan only `.arxml`/`.xml`/`.a2l` and write a compact report (default `arxml_update.html`): a **per-type verdict** (`ARXML updated: …` / `A2L updated: …`, or `no changes` / `no files found`), the updated files split per type, and the AUTOSAR/A2L changes. The report is **always written** — when nothing changed it says "No ARXML or A2L updates" rather than skipping the file, so a missing file is never confused with a crashed run |
+| `--gui` | Open the GUI window instead of running in the terminal. `old_dir`/`new_dir` become optional and prefill the folder fields when given |
 
 ## GUI
 
@@ -28,125 +75,131 @@ Exit code: `0` = không có thay đổi thật, `1` = có thay đổi thật (CI
 python -m compare_tool --gui
 ```
 
-Đủ mọi mode của CLI: browse chọn OLD/NEW folder, chọn nơi lưu report (để trống → tên mặc định đặt **cạnh** thư mục NEW, tránh report tự scan chính nó lần sau), checkbox ARXML/A2L-only, ô Exclude (glob cách nhau bằng space). Scan chạy thread riêng — cửa sổ không đơ, có progress bar; xong hiện verdict màu (xanh = không đổi, cam = có thay đổi thật, đỏ = COMPARE INCOMPLETE) + log y hệt terminal, nút **Open report** mở HTML trong browser. Chung core `run_compare()` với CLI nên fail-safe semantics giống hệt — worker chết giữa chừng hiện `RUN FAILED` đỏ, không bao giờ ra kết quả nửa vời.
+A tkinter front panel (stdlib, no server) covering every CLI mode: browse for the OLD/NEW folders, pick where to save the report (leave it empty and the default name is placed **next to** the NEW folder, so the report does not scan itself on the next run), an ARXML/A2L-only checkbox, and an Exclude field taking space-separated globs.
 
-## Noise được bỏ qua (ignorable)
+The scan runs on a worker thread — the window stays responsive and shows a progress bar. On completion you get a colour-coded verdict (green = no real change, orange = real changes, red = COMPARE INCOMPLETE), the same log the terminal prints, and an **Open report** button. It shares the `run_compare()` core with the CLI, so fail-safe semantics are identical: a worker that dies mid-run shows a red `RUN FAILED` instead of a half-finished result.
 
-| Loại | Rule | File |
+## What counts as noise
+
+| Kind | Rule | Files |
 |---|---|---|
-| `comment` | Comment C (`//`, `/* */`), comment XML (`<!-- -->`) | .c .h .arxml .a2l |
-| `rename` | Đổi tên biến 1-1 nhất quán (MATLAB auto-gen). Chỉ nhận khi: map bijective, tên cũ biến mất hoàn toàn khỏi file mới, tên mới chưa từng có ở file cũ (chặn case hoán đổi biến a↔b). Dòng nào map không giải thích được → vẫn REAL | .c .h |
-| `uuid` | Attribute `UUID="..."` | .arxml .xml |
-| `timestamp` | Block `<ADMIN-DATA>`, `<DATE>` | .arxml .xml |
-| `whitespace` | Thụt lề, trailing space, dòng trống | tất cả |
-| `line-endings` | CRLF vs LF, BOM | tất cả |
+| `comment` | C comments (`//`, `/* */`), XML comments (`<!-- -->`) | .c .h .arxml .a2l |
+| `rename` | Consistent 1-to-1 variable renaming (MATLAB auto-generated). Accepted only when the map is bijective, the old name disappears completely from the new file, and the new name never existed in the old file (blocks an `a`↔`b` swap). Any line the map cannot explain stays REAL | .c .h |
+| `uuid` | `UUID="..."` attributes | .arxml .xml |
+| `timestamp` | `<ADMIN-DATA>` blocks, `<DATE>` | .arxml .xml |
+| `whitespace` | Indentation, trailing spaces, blank lines | all |
+| `line-endings` | CRLF vs LF, BOM | all |
 
-Nguyên tắc fail-safe: không chứng minh được là noise → đánh REAL.
+Auto-generated name churn is recognised as a `rename`: Embedded Coder temporaries such as `rtb_*`, mangling suffixes and renumbered temporaries change between runs without changing behaviour.
+
+Fail-safe principle throughout: **if it cannot be proven to be noise, it is marked REAL.**
 
 ## Moved block detection
 
-Khối code bị xóa chỗ này và xuất hiện nguyên vẹn chỗ khác (MATLAB đổi thứ tự function/declaration khi model reorder) được đánh nhãn `moved` — tô **xanh dương** thay vì đỏ/xanh lá, kèm chú thích `block moved to NEW line N` / `block moved from OLD line N` để đối chiếu nhanh.
+A block deleted in one place and reappearing intact somewhere else (Embedded Coder reorders functions and declarations when the model changes) is labelled `moved` and coloured **blue** instead of red/green, with a `block moved to NEW line N` / `block moved from OLD line N` note for quick cross-checking.
 
-Điều kiện nhận (fail-safe):
+Acceptance rules (fail-safe):
 
-- Nội dung khớp **chính xác** trên shadow (đã bỏ comment/whitespace, đã áp rename map) — comment trong block khác nhau vẫn nhận.
-- Khối ≥ 2 dòng non-blank (1 dòng kiểu `break;`, `}` trùng ngẫu nhiên quá nhiều).
-- Ghép **1-1 duy nhất**: nội dung xuất hiện ở đúng 1 hunk xóa và 1 hunk chèn; trùng lặp/mơ hồ → giữ REAL.
+- Contents match **exactly** on the shadow text (comments and whitespace stripped, rename map applied) — differing comments inside the block are still accepted.
+- The block is at least 2 non-blank lines (single lines like `break;` or `}` match by coincidence too often).
+- The pairing is **unique 1-to-1**: the content appears in exactly one delete hunk and one insert hunk. Duplicate or ambiguous matches stay REAL.
 
-File chỉ có moved block **vẫn tính Modified** (đổi thứ tự statement có thể đổi hành vi) — moved là hỗ trợ hiển thị để reviewer khỏi so tay 2 khối đỏ/xanh lớn, không phải noise được bỏ qua. Badge Unimportant không ẩn moved.
+A file containing only moved blocks still counts as **Modified** — reordering statements can change behaviour. `moved` is a display aid so the reviewer does not have to compare two large red/green blocks by hand, not an ignorable category, and the Unimportant badge does not hide it.
 
 ## AUTOSAR semantic summary
 
-Tool trích thông tin AUTOSAR từ 2 phía và báo thay đổi ở mức **ngữ nghĩa**, không chỉ mức text:
+The tool extracts AUTOSAR information from both sides and reports changes at the **semantic** level, not just as text:
 
-| Nguồn | Trích gì | Báo gì |
+| Source | Extracted | Reported |
 |---|---|---|
-| `.arxml`/`.xml` | **Port-interface** (SENDER-RECEIVER, CLIENT-SERVER, MODE-SWITCH, NV-DATA, PARAMETER, TRIGGER) theo đường dẫn package đầy đủ | added / removed |
-| `.arxml`/`.xml` | **SWC** (APPLICATION, SENSOR-ACTUATOR, SERVICE, CDD, ECU-ABSTRACTION, NV-BLOCK) | added / removed |
-| `.arxml`/`.xml` | **Port** của SWC (P/R/PR + interface tham chiếu), **runnable** (+ SYMBOL), **event** (loại, PERIOD, runnable kích hoạt) | added / removed / **changed** (vd đổi period TIMING-EVENT `0.01s → 0.02s`, port trỏ interface khác) |
-| `.c` | **RTE access point** — mọi call `Rte_Read/Write/Call/IrvRead/IrvWrite/Mode/Switch/...` (strip comment trước khi đếm) | added / removed |
-| `.a2l` | **Calibration object** — `CHARACTERISTIC` / `MEASUREMENT` theo tên (strip comment + string trước khi quét, block comment-out không tính) | added / removed |
+| `.arxml`/`.xml` | **Port interfaces** (SENDER-RECEIVER, CLIENT-SERVER, MODE-SWITCH, NV-DATA, PARAMETER, TRIGGER) with their full package path | added / removed |
+| `.arxml`/`.xml` | **SWCs** (APPLICATION, SENSOR-ACTUATOR, SERVICE, CDD, ECU-ABSTRACTION, NV-BLOCK) | added / removed |
+| `.arxml`/`.xml` | SWC **ports** (P/R/PR + referenced interface), **runnables** (+ SYMBOL), **events** (kind, PERIOD, triggered runnable) | added / removed / **changed** (e.g. a TIMING-EVENT period going `0.01s → 0.02s`, a port pointing at a different interface) |
+| `.c` | **RTE access points** — every `Rte_Read/Write/Call/IrvRead/IrvWrite/Mode/Switch/…` call (comments stripped before counting) | added / removed |
+| `.a2l` | **Calibration objects** — `CHARACTERISTIC` / `MEASUREMENT` by name (comments and strings stripped first, so commented-out blocks do not count) | added / removed |
 
-Hiển thị:
+How it is shown:
 
-- **CLI**: block `ARXML interfaces`, `AUTOSAR behavior`, `RTE access points`, `A2L objects` kèm danh sách `+`/`-`/`~` và file chứa nó.
-- **Report HTML**: mục **AUTOSAR changes** ngay đầu trang, gom theo loại (Port interfaces / Software components / Ports / Runnables / Events / RTE access points / A2L characteristics & measurements), click tên file nhảy tới diff chi tiết; mỗi file trong Detailed changes cũng có dòng ghi chú `Interfaces:` / `Behavior:` / `RTE:` / `A2L:` riêng.
-- File được thêm/xóa nguyên file: toàn bộ interface/SWC/RTE call/A2L object trong đó tính là added/removed.
+- **CLI**: `ARXML interfaces`, `AUTOSAR behavior`, `RTE access points` and `A2L objects` blocks listing `+`/`-`/`~` entries with the file each belongs to.
+- **HTML report**: an **AUTOSAR changes** section at the top of the page, grouped by kind (port interfaces / software components / ports / runnables / events / RTE access points / A2L characteristics & measurements). Clicking a file name jumps to its detailed diff, and each file in Detailed changes carries its own `Interfaces:` / `Behavior:` / `RTE:` / `A2L:` note.
+- Whole files added or deleted contribute every interface / SWC / RTE call / A2L object inside them as added or removed.
 
-Fail-safe: file không parse được XML → không đoán, bỏ qua summary của file đó (diff text vẫn hiển thị đầy đủ). Verb `Rte_` lạ không nằm trong danh sách API chuẩn → không đếm nhưng vẫn hiện trong diff.
+Fail-safe: a file whose XML does not parse is skipped from the summary rather than guessed (its text diff is still shown in full). An unknown `Rte_` verb outside the standard API list is not counted, but still appears in the diff.
 
-## Group theo model / SWC
+## Grouping by model / SWC
 
-File được gom theo **model Simulink** dựa trên naming convention của Embedded Coder AUTOSAR blockset: `X.c`, `X.h`, `X_types.h`, `X_private.h`, `X_data.c`, `Rte_X.h`, `X.arxml` và bộ arxml modular (`X_component.arxml`, `X_interface.arxml`, ...) thuộc model `X`.
+Files are grouped by **Simulink model** using the Embedded Coder AUTOSAR blockset naming convention: `X.c`, `X.h`, `X_types.h`, `X_private.h`, `X_data.c`, `Rte_X.h`, `X.arxml` and the modular ARXML set (`X_component.arxml`, `X_interface.arxml`, …) all belong to model `X`.
 
-- **Model overview** đầu report: bảng mỗi model 1 dòng — số file Modified/Added/Deleted/Unimportant (màu theo loại) + rollup AUTOSAR (`+1 port · ~1 event · +2 RTE`). Click tên model nhảy tới nhóm chi tiết. Dành cho reviewer/lead cần nhìn tổng quan trước khi soi diff.
-- **Detailed changes** gom theo model: mỗi model 1 khối xổ/thu; nhóm có thay đổi thật **mở sẵn**, nhóm chỉ có noise thu gọn. File không thuộc model nào (rtwtypes.h, utility dùng chung...) vào nhóm **Shared / other** cuối cùng.
-- Fail-safe nhận diện: tên `X` chỉ tính là model khi gom được ≥ 3 file hoặc sở hữu file `.arxml` (cặp utility lẻ như `rt_nonfinite.c/.h` không thành model giả). Không nhận diện được model nào → report giữ layout phẳng như cũ.
+- **Model overview** at the top of the report: one row per model with the Modified/Added/Deleted/Unimportant file counts (colour-coded) plus an AUTOSAR rollup (`+1 port · ~1 event · +2 RTE`). Clicking the model name jumps to its detail group. Meant for a reviewer or lead who wants the shape of the change before reading diffs.
+- **Detailed changes** grouped by model: one collapsible block per model, groups with real changes **expanded by default**, noise-only groups collapsed. Files belonging to no model (`rtwtypes.h`, shared utilities, …) land in a final **Shared / other** group.
+- Fail-safe detection: a name `X` only becomes a model when it collects at least 3 files or owns an `.arxml` file, so a stray utility pair like `rt_nonfinite.c/.h` does not create a phantom model. If no model is detected, the report keeps the old flat layout.
 
-## Chạy trên Azure DevOps
+## HTML report
 
-Repo có sẵn [azure-pipelines.yml](azure-pipelines.yml) mẫu cho repo codegen (codegen mới commit đè lên bản cũ):
+- **Real changes only by default**: the `Unimportant` and `Identical` badges start off — noise-only files are hidden, and minor (yellow) lines inside a Modified file collapse into a `⋯ N minor lines hidden` placeholder. Turn the badges on when you want to inspect the noise.
+- **Badge summary** at the top using the usual compare-tool vocabulary: **Modified / Unimportant / Added / Deleted / Identical**. Click a badge to show or hide that category.
+- **Folder tree** in Beyond Compare style: `≠` Modified, `≈` Unimportant (comments/noise only), `+` Added, `−` Deleted, `=` Identical (each symbol has a tooltip). Folders expand and collapse, and a folder takes the heaviest status inside it. Clicking a file jumps to its detail entry. The tree **always lists every file** — badges only hide entries in Detailed changes.
+- **Filter box** in the toolbar: type to filter by file name or model name across both the tree and the detailed changes — essential on reports with hundreds of files.
+- **Detailed changes** (grouped by model when detected): Modified files are **expanded by default**, other kinds expand on click, each tagged by colour. Expand all / Collapse all buttons cover whole model groups.
+  - Modified: two-column split diff (red/green), real hunks only; noise hunks are summarised by count; moved blocks are blue with their moved to/from reference line.
+  - Unimportant: every hunk shown with its noise-kind label (comment/rename/uuid/timestamp/whitespace).
+  - Added/Deleted: file contents (up to 400 lines; binary files show only their size).
 
-1. **OLD** lấy từ git: PR build → merge-base với target branch; CI build → commit trước (`HEAD~1`). Checkout bằng `git worktree`, không cần lưu snapshot/artifact riêng.
-2. **NEW** = working tree hiện tại.
-3. Tool chạy `--exit-zero` (codegen đổi là bình thường, pipeline không fail) và `--exclude compare_report.html` (report của build trước không tự tính là diff).
-4. Report nằm ngay trong thư mục codegen, **publish artifact** `codegen` chung với code; CI build còn **commit report vào repo** với `[skip ci]`.
+## CI integration
 
-Setup một lần (ghi trong comment của yml): sửa tên repo tool + đường dẫn codegen, và cấp quyền **Contribute** cho Build Service để push report. Tool cũng cài được qua `pip install <đường dẫn repo>` nhờ `pyproject.toml` (entry point `compare-tool`).
+Any pipeline can run the tool as a gate — one command, meaningful exit codes. Two things usually need setting up: where the OLD tree comes from, and excluding the previous report from the scan.
 
-## Đóng gói chạy trên server (không cần cài)
+[azure-pipelines.yml](azure-pipelines.yml) is a working example for a repo where generated code is committed over the previous version:
+
+1. **OLD** comes from git: on a PR build, the merge base with the target branch; on a CI build, the previous commit (`HEAD~1`). It is checked out with `git worktree`, so no snapshot artifact needs to be stored.
+2. **NEW** is the current working tree.
+3. The tool runs with `--exit-zero` (regenerated code changing is normal, the pipeline should not fail on it) and `--exclude compare_report.html` (the previous build's report must not count as a diff).
+4. The report is published as part of the `codegen` artifact; CI builds also commit it back to the repo with `[skip ci]`.
+
+The YAML comments list the one-time setup: repo name and codegen paths, plus **Contribute** permission for the build service if you want the report committed back.
+
+## Single-file build
 
 ```powershell
-.\build.ps1        # dist\compare_tool.pyz  (~26 KB) — cho server đã có Python 3.8+
-.\build.ps1 -Exe   # thêm dist\compare_tool.exe (~8 MB) — cho server không có gì
+.\build.ps1        # dist\compare_tool.pyz  (~26 KB) - for servers that already have Python 3.8+
+.\build.ps1 -Exe   # also dist\compare_tool.exe (~8 MB) - for servers with nothing installed
 ```
 
-Cả hai đều là **1 file duy nhất**, copy lên server là chạy, không pip install, không giải nén:
+Both are a **single file**: copy it to the machine and run it. No pip install, no unpacking.
 
-- **`.pyz` (zipapp, stdlib)**: chạy `python compare_tool.pyz <old> <new> [flags]`. Ưu tiên cách này khi server có Python — file nhỏ, build không cần dependency, không bị antivirus soi.
-- **`.exe` (PyInstaller onefile)**: chạy `compare_tool.exe <old> <new> [flags]`, server không cần Python. Build cần `pip install pyinstaller` trên máy dev; exe chỉ chạy trên Windows (build trên OS nào chạy trên OS đó). Lưu ý: exe đóng gói PyInstaller đôi khi bị antivirus/AppLocker trên server chặn — nếu bị thì dùng `.pyz`.
+- **`.pyz` (zipapp, stdlib)**: `python compare_tool.pyz <old> <new> [flags]`. Prefer this when Python is available — small, no build dependencies, not flagged by antivirus.
+- **`.exe` (PyInstaller onefile)**: `compare_tool.exe <old> <new> [flags]`, no Python needed on the target. Building it needs `pip install pyinstaller` on the dev machine, and the executable only runs on the OS it was built on. PyInstaller executables are sometimes blocked by antivirus or AppLocker — fall back to the `.pyz` in that case.
 
-Mọi flag CLI (`--report`, `--exclude`, `--exit-zero`, `--arxml-only`) hoạt động y hệt bản chạy từ source. Thư mục `build/`, `dist/` đã nằm trong `.gitignore`.
+Every CLI flag behaves identically in the packaged builds. `build/` and `dist/` are already in `.gitignore`.
 
-## Report HTML
-
-- **Mặc định chỉ hiện thay đổi thật**: badge `Unimportant` và `Identical` tắt sẵn — file noise-only ẩn, dòng minor (vàng) trong file Modified thay bằng placeholder `⋯ N minor lines hidden`. Bật badge khi cần soi noise.
-- **Badge summary** đầu trang, thuật ngữ theo convention chung của tool compare: **Modified / Unimportant / Added / Deleted / Identical**. Click badge để ẩn/hiện loại đó.
-- **Model overview** + **AUTOSAR changes**: xem mục [AUTOSAR semantic summary](#autosar-semantic-summary) và [Group theo model / SWC](#group-theo-model--swc).
-- **Folder tree** kiểu Beyond Compare: ký hiệu theo file — `≠` Modified, `≈` Unimportant (chỉ comment/noise), `+` Added, `−` Deleted, `=` Identical (hover ký hiệu có tooltip). Folder xổ/thu, trạng thái folder = trạng thái nặng nhất bên trong. Click file nhảy thẳng tới mục chi tiết. Tree **luôn hiển thị đầy đủ mọi file** — badge chỉ ẩn mục detailed changes, không ẩn dòng trong tree.
-- **Filter box** trên toolbar: gõ để lọc theo tên file hoặc tên model (áp cho cả tree lẫn detailed changes) — hợp report hàng trăm file.
-- **Detailed changes** (gom theo model khi nhận diện được): file **Modified mở sẵn** (đỡ click từng file), các loại khác click để xổ/thu, gắn tag màu theo loại. Nút Expand all / Collapse all (xổ/thu cả nhóm model).
-  - Modified: diff split 2 cột (đỏ/xanh), chỉ hunk thật; hunk noise ghi chú số lượng; khối moved tô xanh dương kèm dòng đối chiếu moved to/from.
-  - Unimportant: diff từng hunk kèm nhãn loại noise (comment/rename/uuid/timestamp/whitespace).
-  - Added/Deleted: hiện nội dung file (tối đa 400 dòng, binary chỉ ghi size).
-
-## Test
+## Development
 
 ```bash
 python -m unittest discover -s tests
 ```
 
-## Cấu trúc
+CI runs the suite on Linux and Windows against Python 3.8 and 3.11, plus a headless scan of the fixture tree checking both the report and the exit code.
 
 ```
 compare_tool/
-├── main.py          # CLI
-├── scanner.py       # quét 2 cây thư mục, ghép file theo đường dẫn tương đối
-├── diff_engine.py   # diff 2 lượt (raw + normalized), phân loại hunk, detect moved block
-├── c_rules.py       # rule C/H: strip comment, tokenize, detect rename + trích RTE access point
-├── arxml_rules.py   # rule ARXML: UUID, ADMIN-DATA, DATE, comment + trích port-interface, SWC (port/runnable/event)
-├── a2l_rules.py     # rule A2L: strip comment C-style + trích CHARACTERISTIC/MEASUREMENT
-
-└── report.py        # HTML report (tự chứa, badge toggle, model overview, group theo model, filter, diff xổ/thu)
+├── main.py          # CLI entry point + run_compare() core shared with the GUI
+├── gui.py           # tkinter front panel
+├── scanner.py       # walks both trees, pairs files by relative path
+├── diff_engine.py   # two-pass diff (raw + normalized), hunk classification, moved-block detection
+├── c_rules.py       # C/H rules: strip comments, tokenize, detect renames, extract RTE access points
+├── arxml_rules.py   # ARXML rules: UUID, ADMIN-DATA, DATE, comments + extract port interfaces, SWCs (ports/runnables/events)
+├── a2l_rules.py     # A2L rules: strip C-style comments + extract CHARACTERISTIC/MEASUREMENT
+└── report.py        # self-contained HTML report (badge toggles, model overview, grouping, filter, collapsible diffs)
 ```
 
-Muốn thêm rule mới: thêm hàm strip vào `c_rules.py`/`arxml_rules.py`, đăng ký vào shadow builder + `_build_variants` trong `diff_engine.py`.
+To add a rule: write the strip function in `c_rules.py` / `arxml_rules.py`, then register it in the shadow builder and `_build_variants` in `diff_engine.py`.
 
+Issues and pull requests are welcome. Please keep the zero-dependency constraint — the tool has to run on locked-down build servers — and add a test under `tests/` for any new rule.
 
-## Tác giả
+## Author
 
 **Long Vo Thien**
 
 ## License
 
-Phát hành theo giấy phép [MIT](LICENSE) © 2026 Long Vo Thien.
+Released under the [MIT License](LICENSE) © 2026 Long Vo Thien.
