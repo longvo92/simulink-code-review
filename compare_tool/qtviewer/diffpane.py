@@ -16,11 +16,12 @@ from pathlib import Path
 from PySide6.QtCore import QRect, QSize, Qt
 from PySide6.QtGui import (QColor, QFont, QPainter, QTextBlockFormat,
                            QTextCharFormat, QTextCursor)
-from PySide6.QtWidgets import (QLabel, QPlainTextEdit, QSplitter,
+from PySide6.QtWidgets import (QHBoxLayout, QLabel, QPlainTextEdit, QSplitter,
                                QStackedWidget, QVBoxLayout, QWidget)
 
 from ..scanner import looks_binary, read_text
 from ..view_model import aligned_rows, char_span
+from .minimap import Minimap
 
 _HINT = 'Select a file in the tree to view its diff.'
 
@@ -143,12 +144,19 @@ class DiffPane(QStackedWidget):
         self._split.addWidget(self.old_edit)
         self._split.addWidget(self.new_edit)
         self._split.setSizes([500, 500])
+        self.minimap = Minimap(self.old_edit)
+        body = QWidget()
+        bl = QHBoxLayout(body)
+        bl.setContentsMargins(0, 0, 0, 0)
+        bl.setSpacing(0)
+        bl.addWidget(self._split, 1)
+        bl.addWidget(self.minimap)
         diff_page = QWidget()
         dl = QVBoxLayout(diff_page)
         dl.setContentsMargins(0, 0, 0, 0)
         dl.setSpacing(0)
         dl.addWidget(self._header)
-        dl.addWidget(self._split)
+        dl.addWidget(body)
 
         self.addWidget(msg_page)   # index 0
         self.addWidget(diff_page)  # index 1
@@ -192,6 +200,8 @@ class DiffPane(QStackedWidget):
     # --- internals ---
 
     def _message(self, text):
+        self.rows = []
+        self.minimap.set_rows([])
         self._msg.setText(text)
         self.setCurrentIndex(0)
 
@@ -233,6 +243,7 @@ class DiffPane(QStackedWidget):
         self.new_edit.setPlainText('\n'.join(r.new_txt or '' for r in rows))
         self.old_edit.set_numbers([str(r.old_no) if r.old_no else '' for r in rows])
         self.new_edit.set_numbers([str(r.new_no) if r.new_no else '' for r in rows])
+        self.minimap.set_rows(rows)
 
         for i, r in enumerate(rows):
             if r.mode == 'ctx':
@@ -257,6 +268,7 @@ class DiffPane(QStackedWidget):
 
     def _load_one_side(self, rel, label, lines, side):
         self.rows = []
+        self.minimap.set_rows([])
         self._header.setText('{}   ·   {}'.format(rel, label))
         edit = self.old_edit if side == 'old' else self.new_edit
         other = self.new_edit if side == 'old' else self.old_edit
