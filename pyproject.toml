@@ -23,6 +23,11 @@ classifiers = [
 ]
 dynamic = ["version"]
 
+# core tool is stdlib-only; the side-by-side viewer (--qt) needs PySide6.
+# install with:  pip install codegen-compare-tool[viewer]
+[project.optional-dependencies]
+viewer = ["PySide6>=6.5"]
+
 [project.urls]
 Homepage = "https://github.com/longvo92/codegen-compare-tool"
 Issues = "https://github.com/longvo92/codegen-compare-tool/issues"
@@ -31,7 +36,7 @@ Issues = "https://github.com/longvo92/codegen-compare-tool/issues"
 compare-tool = "compare_tool.main:main"
 
 [tool.setuptools]
-packages = ["compare_tool"]
+packages = ["compare_tool", "compare_tool.qtviewer"]
 
 [tool.setuptools.dynamic]
 version = { attr = "compare_tool.__version__" }

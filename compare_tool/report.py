@@ -8,6 +8,7 @@ from pathlib import Path
 from .diff_engine import ruleset_for
 from .scanner import (looks_binary, read_text, summarize, summarize_a2l,
                       summarize_ifaces, summarize_rte, summarize_swcs)
+from .view_model import char_span
 
 CONTEXT = 3
 MAX_CONTENT = 400  # max lines shown for added/deleted file content
@@ -236,23 +237,17 @@ def _char_diff(old_txt, new_txt):
     suffix stay plain, everything between the FIRST and LAST differing char
     is one contiguous highlighted span per side. A per-opcode diff would
     fragment into many tiny segments (equal chars like '_' or 'e' between
-    renamed identifiers), which is hard on the eyes."""
-    pre = 0
-    limit = min(len(old_txt), len(new_txt))
-    while pre < limit and old_txt[pre] == new_txt[pre]:
-        pre += 1
-    suf = 0
-    while suf < limit - pre and old_txt[len(old_txt) - 1 - suf] == new_txt[len(new_txt) - 1 - suf]:
-        suf += 1
+    renamed identifiers), which is hard on the eyes. Span offsets come from the
+    shared view model so the Qt viewer highlights the exact same characters."""
+    (o_lo, o_hi), (n_lo, n_hi) = char_span(old_txt, new_txt)
 
-    def mark(txt):
-        mid = txt[pre:len(txt) - suf]
-        if not mid:
+    def mark(txt, lo, hi):
+        if lo >= hi:
             return _esc(txt)
-        return (_esc(txt[:pre]) + '<span class="chg-seg">' + _esc(mid) +
-                '</span>' + _esc(txt[len(txt) - suf:]))
+        return (_esc(txt[:lo]) + '<span class="chg-seg">' + _esc(txt[lo:hi]) +
+                '</span>' + _esc(txt[hi:]))
 
-    return mark(old_txt), mark(new_txt)
+    return mark(old_txt, o_lo, o_hi), mark(new_txt, n_lo, n_hi)
 
 
 _MODE_CLS = {'real': ('del', 'add'), 'minor': ('delm', 'addm'), 'moved': ('mvd', 'mva')}
