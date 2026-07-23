@@ -137,6 +137,11 @@ def main(argv=None):
                     help='open the graphical front panel (tkinter) instead of '
                          'running in the terminal; old_dir/new_dir are '
                          'optional and prefill the folder fields when given')
+    ap.add_argument('--qt', action='store_true',
+                    help='open the side-by-side compare viewer (PySide6): a '
+                         'folder tree with a two-pane old/new diff, like Beyond '
+                         'Compare. old_dir/new_dir are optional; when omitted '
+                         'the viewer prompts for them')
     ap.add_argument('--report', metavar='OUT.html', default=None,
                     help='HTML report output path (default: compare_report.html, '
                          'or arxml_update.html with --arxml-only)')
@@ -159,6 +164,10 @@ def main(argv=None):
     if args.gui:
         from .gui import run_gui  # deferred: tkinter may be absent headless
         return run_gui(args.old_dir, args.new_dir)
+    if args.qt:
+        from .qtviewer import run_viewer  # deferred: PySide6 may be absent
+        return run_viewer(args.old_dir, args.new_dir, exclude=args.exclude,
+                          arxml_only=args.arxml_only)
     if not args.old_dir or not args.new_dir:
         ap.error('old_dir and new_dir are required (or use --gui)')
     # Windows consoles often run a legacy codepage (cp1252/cp437) that cannot
