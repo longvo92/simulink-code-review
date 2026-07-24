@@ -3,10 +3,19 @@
 [![Test](https://github.com/longvo92/codegen-compare-tool/actions/workflows/test.yml/badge.svg)](https://github.com/longvo92/codegen-compare-tool/actions/workflows/test.yml)
 [![Python 3.8+](https://img.shields.io/badge/python-3.8%2B-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
+[![Release](https://img.shields.io/badge/release-v1.0.0-blue.svg)](https://github.com/longvo92/codegen-compare-tool/releases/latest)
 
 Diff two AUTOSAR code-generation output folders (MATLAB/Simulink Embedded Coder) and show **only the changes that matter**.
 
-Regenerating a Simulink model rewrites timestamps, UUIDs, comment banners and auto-generated variable names even when the behaviour is identical. A plain `git diff` or Beyond Compare run drowns the reviewer in that noise. This tool classifies every hunk as *real* or *ignorable*, then renders a self-contained HTML report with an AUTOSAR-level summary on top of the text diff.
+Regenerating a Simulink model rewrites timestamps, UUIDs, comment banners and auto-generated variable names even when the behaviour is identical. A plain `git diff` or Beyond Compare run drowns the reviewer in that noise. This tool classifies every hunk as *real* or *ignorable*, then gives you two ways to review the result: a self-contained **HTML report** with an AUTOSAR-level summary on top of the text diff, and a **side-by-side desktop viewer** with a change minimap.
+
+Three front ends over one compare core, so a verdict never depends on how you look at it:
+
+| | For |
+|---|---|
+| [**CLI**](#command-line) | pipelines and scripts — writes the report, exit code gates the build |
+| [**Viewer**](#side-by-side-viewer) (`--qt`) | reviewing interactively: folder tree, two-pane diff, minimap |
+| [**GUI**](#gui) (`--gui`) | running a compare without the terminal |
 
 **Zero dependencies** — Python 3.8+ standard library only. No pip install required, no server, no internet access. (The optional [side-by-side viewer](#side-by-side-viewer) adds PySide6; the CLI, GUI and HTML report stay dependency-free.)
 
