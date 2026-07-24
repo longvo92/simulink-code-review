@@ -12,7 +12,7 @@ SKIP_DIRS = {'.git', '__pycache__', '.svn'}
 # statuses a caller may fold away (noise-only verdicts). Real changes, added,
 # deleted and error can NEVER be folded -- hiding one would be exactly the
 # silent-miss this tool exists to prevent.
-FOLDABLE = ('ignorable-only',)
+FOLDABLE = ('comment-only', 'ignorable-only')
 
 
 def read_text(path):
@@ -226,7 +226,7 @@ def scan(old_root, new_root, progress=None, exclude=(), include=(), fold=()):
 
 
 def summarize(results):
-    counts = {'identical': 0, 'ignorable-only': 0, 'real-change': 0,
+    counts = {'identical': 0, 'comment-only': 0, 'ignorable-only': 0, 'real-change': 0,
               'added': 0, 'deleted': 0, 'error': 0}
     for r in results.values():
         counts[r['status']] += 1

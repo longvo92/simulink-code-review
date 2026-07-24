@@ -12,6 +12,7 @@ from collections import namedtuple
 # Identical) and its colours so the viewer and the report read the same.
 STATUS = {
     'real-change':    ('≠', 'Modified',     '#ff7b7b'),   # not-equal sign
+    'comment-only':   ('≉', 'Comment',      '#9d92e0'),   # comments only
     'ignorable-only': ('≈', 'Unimportant',  '#e6c85c'),   # almost-equal
     'added':          ('+',      'Added',        '#7bd88a'),
     'deleted':        ('−', 'Deleted',      '#c88ad8'),   # minus sign
@@ -21,8 +22,8 @@ STATUS = {
 
 # folder verdict = most significant child verdict; an uncompared 'error' path
 # outranks everything so a folder hiding one can never look clean
-PRIO = {'error': 5, 'real-change': 4, 'ignorable-only': 3, 'added': 2,
-        'deleted': 2, 'identical': 1}
+PRIO = {'error': 6, 'real-change': 5, 'ignorable-only': 4, 'comment-only': 3,
+        'added': 2, 'deleted': 2, 'identical': 1}
 
 # a directory node's .rel is None; a file node carries its relative path
 Node = namedtuple('Node', 'name is_dir status rel children')

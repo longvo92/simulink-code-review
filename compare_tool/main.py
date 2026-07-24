@@ -49,9 +49,9 @@ def summary_lines(results, counts):
     files and the AUTOSAR/A2L semantic rollups. The CLI prints them, the
     GUI shows them in its log pane."""
     lines = []
-    lines.append('Summary: {real-change} modified, {ignorable-only} unimportant, '
-                 '{added} added, {deleted} deleted, {identical} identical, '
-                 '{error} error(s)'.format(**counts))
+    lines.append('Summary: {real-change} modified, {comment-only} comment-only, '
+                 '{ignorable-only} unimportant, {added} added, {deleted} deleted, '
+                 '{identical} identical, {error} error(s)'.format(**counts))
     if counts['error']:
         lines.append('!! COMPARE INCOMPLETE: {} path(s) could NOT be compared -- '
                      'treat them as potentially changed:'.format(counts['error']))

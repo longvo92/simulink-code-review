@@ -171,10 +171,16 @@ class TestCleanDefaults(unittest.TestCase):
         results = scan(FIX / 'old', FIX / 'new')
         cls.page = build_report(results, FIX / 'old', FIX / 'new')
 
-    def test_unimportant_and_identical_hidden_by_default(self):
-        self.assertIn('<body class="hide-id hide-ign">', self.page)
+    def test_noise_categories_and_identical_hidden_by_default(self):
+        self.assertIn('<body class="hide-id hide-ign hide-cmt">', self.page)
         self.assertIn('class="badge b-ign off"', self.page)
+        self.assertIn('class="badge b-cmt off"', self.page)
         self.assertIn('class="badge b-id off"', self.page)
+
+    def test_comment_and_unimportant_are_separate_badges(self):
+        # comment-only files get their own verdict, apart from UUID/rename noise
+        self.assertRegex(self.page, r'badge b-cmt off[^>]*>\d+ Comment<')
+        self.assertRegex(self.page, r'badge b-ign off[^>]*>\d+ Unimportant<')
 
     def test_modified_files_expanded_by_default(self):
         self.assertRegex(self.page, r'<details class="file sec-real" id="f0"[^>]* open>')

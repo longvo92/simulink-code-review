@@ -37,7 +37,8 @@ class MainWindow(QMainWindow):
         self.include = _arxml_include() if arxml_only else ()
         self.results = {}
         self.worker = None
-        self._pending_rel = None  # file to re-open after a rule-toggle rescan
+        self._pending_rel = None     # file to re-open after a rule-toggle rescan
+        self._rescan_queued = False  # a toggle flipped while a scan was running
 
         self.setWindowTitle('AUTOSAR CodeGen Compare — viewer')
         self.resize(1200, 800)
@@ -65,16 +66,23 @@ class MainWindow(QMainWindow):
         # compare-rule toggles: unticking a category means "do not report it
         # separately" -- the tree is rescanned and each such file comes back as
         # Identical (nothing left) or Modified (real changes underneath).
+        self.cb_comment = QCheckBox('Comment')
+        self.cb_comment.setChecked(True)
+        self.cb_comment.setToolTip(
+            'Untick to rescan ignoring comment-only differences: each such '
+            'file is then reported as Identical or Modified.')
+        self.cb_comment.toggled.connect(self._start_scan)
         self.cb_unimportant = QCheckBox('Unimportant')
         self.cb_unimportant.setChecked(True)
         self.cb_unimportant.setToolTip(
-            'Untick to rescan ignoring unimportant differences (UUIDs, '
-            'timestamps, renames, whitespace): each such file is then reported '
-            'as Identical or Modified.')
+            'Untick to rescan ignoring the other unimportant differences '
+            '(UUIDs, timestamps, renames, whitespace): each such file is then '
+            'reported as Identical or Modified.')
         self.cb_unimportant.toggled.connect(self._start_scan)
         rules = QHBoxLayout()
         rules.setContentsMargins(0, 0, 0, 0)
         rules.addWidget(QLabel('Report:'))
+        rules.addWidget(self.cb_comment)
         rules.addWidget(self.cb_unimportant)
         rules.addStretch(1)
 
@@ -149,6 +157,8 @@ class MainWindow(QMainWindow):
         """Change categories the current rules do NOT report separately; those
         files come back Identical (or Modified when real changes remain)."""
         fold = []
+        if not self.cb_comment.isChecked():
+            fold.append('comment-only')
         if not self.cb_unimportant.isChecked():
             fold.append('ignorable-only')
         return tuple(fold)
@@ -157,6 +167,10 @@ class MainWindow(QMainWindow):
         if not (self.old and self.new):
             return
         if self.worker and self.worker.isRunning():
+            # never drop the request: a toggle flipped while a scan is running
+            # would leave the tree disagreeing with the checkboxes. Queue it and
+            # run once the current scan lands.
+            self._rescan_queued = True
             return
         # a rule toggle rescans; remember the open file so the reviewer keeps
         # their place instead of being thrown back to an empty pane
@@ -196,8 +210,10 @@ class MainWindow(QMainWindow):
                                 '(treat as potentially changed): {}'.format(len(errs), shown))
             self.banner.setVisible(True)
         self.statusBar().showMessage(
-            '{real-change} modified · {ignorable-only} unimportant · {added} added · '
-            '{deleted} deleted · {identical} identical · {error} error(s)'.format(**counts))
+            '{real-change} modified · {comment-only} comment-only · '
+            '{ignorable-only} unimportant · {added} added · {deleted} deleted · '
+            '{identical} identical · {error} error(s)'.format(**counts))
+        self._run_queued_scan()
 
     def _on_fail(self, msg):
         self.progress.setVisible(False)
@@ -205,6 +221,14 @@ class MainWindow(QMainWindow):
                             'potentially changed): {}'.format(msg))
         self.banner.setVisible(True)
         self.statusBar().showMessage('SCAN FAILED')
+        self._run_queued_scan()
+
+    def _run_queued_scan(self):
+        """Rerun once for a rule toggle that arrived mid-scan, so the tree
+        always ends up matching the checkboxes."""
+        if self._rescan_queued:
+            self._rescan_queued = False
+            self._start_scan()
 
     # --- tree fill + selection ---
 

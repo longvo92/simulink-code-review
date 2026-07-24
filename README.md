@@ -90,7 +90,8 @@ python -m compare_tool --qt <old_gen_folder> <new_gen_folder>
 
 A Beyond-Compare-style desktop app (PySide6) for reviewing changes interactively instead of scrolling an HTML report:
 
-- **Folder tree** on the left, each file coloured by verdict (Modified / Unimportant / Added / Deleted / Identical / **NOT compared**). A path filter and *Show: Identical / Unimportant* toggles narrow it down; by default both are off, so the tree opens on real changes only.
+- **Folder tree** on the left, each file coloured by verdict (Modified / Comment / Unimportant / Added / Deleted / Identical / **NOT compared**). The tree **always shows the whole structure** — a verdict never removes a row, so the layout does not shift under you. A path box filters by name.
+- **Compare-rule toggles** (`Report: Comment / Unimportant`): unticking one immediately rescans with those differences ignored, so each affected file is re-judged as **Identical** (that was all there was) or **Modified** (real changes remain). The file you had open stays open. Real changes can never be folded away by a toggle.
 - **Two-pane diff** on the right: old and new aligned line-for-line and scrolled in lockstep, real changes in red/green, generator noise in yellow, moved blocks in blue, with the exact changed characters highlighted inside each line — the same classification the report uses.
 - **Change minimap** down the right edge: the whole file compressed to one bar per change, with a viewport box; click or drag to jump.
 - **`F7` / `F8`** step to the previous / next real change (noise is skipped). For `.arxml`/`.a2l` files the header shows the AUTOSAR / A2L rollup (`+1 port · ~1 event`, …).
@@ -111,6 +112,8 @@ PySide6 is imported only under `--qt`, so the CLI and the HTML report keep worki
 | `line-endings` | CRLF vs LF, BOM | all |
 
 Auto-generated name churn is recognised as a `rename`: Embedded Coder temporaries such as `rtb_*`, mangling suffixes and renumbered temporaries change between runs without changing behaviour.
+
+**Comment changes get their own verdict.** A file whose differences are *only* comments is reported as **Comment**, separate from **Unimportant** (UUIDs, timestamps, renames, whitespace) — regenerating a model rewrites comment banners constantly, and "only the comment banner moved" triages very differently from "an identifier was renamed". The two are counted separately in the CLI summary, get their own report badge, and have their own tree marker. A file mixing comments *with* other noise stays Unimportant: the narrower claim has to be exact.
 
 Fail-safe principle throughout: **if it cannot be proven to be noise, it is marked REAL.**
 
@@ -156,9 +159,9 @@ Files are grouped by **Simulink model** using the Embedded Coder AUTOSAR blockse
 
 ## HTML report
 
-- **Real changes only by default**: the `Unimportant` and `Identical` badges start off — noise-only files are hidden, and minor (yellow) lines inside a Modified file collapse into a `⋯ N minor lines hidden` placeholder. Turn the badges on when you want to inspect the noise.
-- **Badge summary** at the top using the usual compare-tool vocabulary: **Modified / Unimportant / Added / Deleted / Identical**. Click a badge to show or hide that category.
-- **Folder tree** in Beyond Compare style: `≠` Modified, `≈` Unimportant (comments/noise only), `+` Added, `−` Deleted, `=` Identical (each symbol has a tooltip). Folders expand and collapse, and a folder takes the heaviest status inside it. Clicking a file jumps to its detail entry. The tree **always lists every file** — badges only hide entries in Detailed changes.
+- **Real changes only by default**: the `Comment`, `Unimportant` and `Identical` badges start off — noise-only files are hidden, and minor (yellow) lines inside a Modified file collapse into a `⋯ N minor lines hidden` placeholder. Turn the badges on when you want to inspect the noise.
+- **Badge summary** at the top using the usual compare-tool vocabulary: **Modified / Comment / Unimportant / Added / Deleted / Identical**. Click a badge to show or hide that category.
+- **Folder tree** in Beyond Compare style: `≠` Modified, `≉` Comment (only comments changed), `≈` Unimportant (other noise only), `+` Added, `−` Deleted, `=` Identical (each symbol has a tooltip). Folders expand and collapse, and a folder takes the heaviest status inside it. Clicking a file jumps to its detail entry. The tree **always lists every file** — badges only hide entries in Detailed changes.
 - **Filter box** in the toolbar: type to filter by file name or model name across both the tree and the detailed changes — essential on reports with hundreds of files.
 - **Detailed changes** (grouped by model when detected): Modified files are **expanded by default**, other kinds expand on click, each tagged by colour. Expand all / Collapse all buttons cover whole model groups.
   - Modified: two-column split diff (red/green), real hunks only; noise hunks are summarised by count; moved blocks are blue with their moved to/from reference line.
