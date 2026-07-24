@@ -22,6 +22,7 @@ from ..main import default_report_name
 from ..report import build_arxml_report, build_report
 from ..scanner import apply_fold, summarize
 from .diffpane import DiffPane
+from .summary import SummaryPanel
 from .tree import STATUS, build_nodes, filter_nodes
 from .worker import ScanWorker
 
@@ -97,13 +98,24 @@ class MainWindow(QMainWindow):
         rules.addWidget(self.cb_unimportant)
         rules.addStretch(1)
 
-        left = QWidget()
-        lv = QVBoxLayout(left)
+        tree_box = QWidget()
+        lv = QVBoxLayout(tree_box)
         lv.setContentsMargins(6, 6, 6, 0)
         lv.setSpacing(4)
         lv.addWidget(self.filter_edit)
         lv.addLayout(rules)
         lv.addWidget(self.tree, 1)
+
+        # quick-changes rollup under the tree: the same "what changed in the
+        # model / calibration" view --arxml-only gives, without leaving the app
+        self.summary = SummaryPanel()
+        self.summary.fileActivated.connect(self._reselect)
+        left = QSplitter(Qt.Vertical)
+        left.addWidget(tree_box)
+        left.addWidget(self.summary)
+        left.setStretchFactor(0, 3)
+        left.setStretchFactor(1, 1)
+        left.setSizes([560, 240])
 
         self.diff = DiffPane()
 
@@ -234,6 +246,7 @@ class MainWindow(QMainWindow):
             return
         self.banner.setVisible(False)
         self.tree.clear()
+        self.summary.set_results({})
         self.diff.clear()
         self._raw_results = {}
         self.results = {}
@@ -257,6 +270,9 @@ class MainWindow(QMainWindow):
 
     def _on_done(self, results):
         self._raw_results = results
+        # the rollup reports the scan itself, never the folded view: a hidden
+        # category must not make the model look untouched
+        self.summary.set_results(results)
         self.progress.setRange(0, 1)
         self.progress.setValue(1)
         self.progress.setVisible(False)
@@ -295,9 +311,16 @@ class MainWindow(QMainWindow):
     # --- report export ---
 
     def _export_report(self):
-        """Write the same self-contained HTML report the CLI produces, from the
-        results already on screen (current rules included)."""
-        if not self.results:
+        """Write the same self-contained HTML report the CLI produces.
+
+        Built from the RAW scan, never from the folded view: the report is the
+        record of what the compare found, so a category the reviewer collapsed
+        on screen (say Comment) must still be in the file, with its real
+        verdict. Otherwise an exported report could show a file as Identical
+        when it was not -- the silent miss this tool exists to prevent. The
+        report's own badges still let the reader hide categories while looking
+        at it."""
+        if not self._raw_results:
             return
         default = str(Path(self.new).parent / default_report_name(self.arxml_only))
         out, _sel = QFileDialog.getSaveFileName(
@@ -307,16 +330,18 @@ class MainWindow(QMainWindow):
             return
         try:
             build = build_arxml_report if self.arxml_only else build_report
-            Path(out).write_text(build(self.results, self.old, self.new),
+            Path(out).write_text(build(self._raw_results, self.old, self.new),
                                  encoding='utf-8')
         except Exception as e:
             QMessageBox.critical(self, 'Export failed',
                                  '{}: {}'.format(type(e).__name__, e))
             return
-        self.statusBar().showMessage('Report written: {}'.format(out))
-        if QMessageBox.question(self, 'Report exported',
-                                'Written to:\n{}\n\nOpen it now?'.format(out)
-                                ) == QMessageBox.Yes:
+        self.statusBar().showMessage('Report written (full scan): {}'.format(out))
+        if QMessageBox.question(
+                self, 'Report exported',
+                'Written to:\n{}\n\nIt contains the full compare, including any '
+                'category hidden here.\n\nOpen it now?'.format(out)
+                ) == QMessageBox.Yes:
             webbrowser.open(Path(out).resolve().as_uri())
         self._front()
 
