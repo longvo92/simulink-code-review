@@ -13,19 +13,19 @@ class ScanWorker(QThread):
     done = Signal(dict)                  # results
     failed = Signal(str)                 # loud failure -> red banner
 
-    def __init__(self, old, new, exclude=(), include=(), fold=()):
+    def __init__(self, old, new, exclude=(), include=()):
         super().__init__()
         self.old = old
         self.new = new
         self.exclude = tuple(exclude)
         self.include = tuple(include)
-        self.fold = tuple(fold)
 
     def run(self):
         try:
+            # scanned rule-free on purpose: the window applies the category
+            # rules to these results, so toggling one never rescans the disk
             results = scan(self.old, self.new, progress=self._progress,
-                           exclude=self.exclude, include=self.include,
-                           fold=self.fold)
+                           exclude=self.exclude, include=self.include)
             self.done.emit(results)
         except Exception as e:
             # scan is internally fail-safe, but a crash here must still be

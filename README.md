@@ -90,11 +90,13 @@ python -m compare_tool --qt <old_gen_folder> <new_gen_folder>
 
 A Beyond-Compare-style desktop app (PySide6) for reviewing changes interactively instead of scrolling an HTML report:
 
+- **Drag & drop to start**: drop the OLD and NEW folders onto the window (both at once, or one after the other) — no file dialog is forced on you when the app opens. `Open folders…` is still there if you prefer browsing, and the window comes back to the front once you are done picking.
 - **Folder tree** on the left, each file coloured by verdict (Modified / Comment / Unimportant / Added / Deleted / Identical / **NOT compared**). The tree **always shows the whole structure** — a verdict never removes a row, so the layout does not shift under you. A path box filters by name.
-- **Compare-rule toggles** (`Report: Comment / Unimportant`): unticking one immediately rescans with those differences ignored, so each affected file is re-judged as **Identical** (that was all there was) or **Modified** (real changes remain). The file you had open stays open. Real changes can never be folded away by a toggle.
-- **Two-pane diff** on the right: old and new aligned line-for-line and scrolled in lockstep, real changes in red/green, generator noise in yellow, moved blocks in blue, with the exact changed characters highlighted inside each line — the same classification the report uses.
-- **Change minimap** down the right edge: the whole file compressed to one bar per change, with a viewport box; click or drag to jump.
-- **`F7` / `F8`** step to the previous / next real change (noise is skipped). For `.arxml`/`.a2l` files the header shows the AUTOSAR / A2L rollup (`+1 port · ~1 event`, …).
+- **Compare-rule toggles** (`Report: Comment / Unimportant`): unticking one re-judges every affected file as **Identical** (that was all there was) or **Modified** (real changes remain). It is instant — the folders are read once and the rules are applied to those results, never by rescanning. Real changes can never be folded away by a toggle.
+- **Two-pane diff** on the right: old and new aligned line-for-line and scrolled in lockstep, real changes in red/green, **comment changes in purple**, other generator noise in yellow, moved blocks in blue, with the exact changed characters highlighted inside each line — the same classification the report uses.
+- **Change minimap** down the right edge, VS Code style: the file's code shape in miniature with the changed lines striped in their colour and a viewport box; click or drag to jump.
+- **`F7` / `F8`** step to the previous / next real change (noise is skipped). The current change block is highlighted on both sides and the header counts `change 3 of 7`, so navigation is visible even in a file that fits on one screen. For `.arxml`/`.a2l` files the header also shows the AUTOSAR / A2L rollup (`+1 port · ~1 event`, …).
+- **`Export report…`** (`Ctrl+E`) writes the same self-contained HTML report the CLI produces, from what is on screen — current category rules included — and offers to open it.
 
 PySide6 is imported only under `--qt`, so the CLI and the HTML report keep working on a headless box with no Qt installed. Fail-safe is unchanged: an uncompared path raises a red **COMPARE INCOMPLETE** banner and a scan crash shows a loud failure — never an empty, clean-looking tree.
 
@@ -113,7 +115,7 @@ PySide6 is imported only under `--qt`, so the CLI and the HTML report keep worki
 
 Auto-generated name churn is recognised as a `rename`: Embedded Coder temporaries such as `rtb_*`, mangling suffixes and renumbered temporaries change between runs without changing behaviour.
 
-**Comment changes get their own verdict.** A file whose differences are *only* comments is reported as **Comment**, separate from **Unimportant** (UUIDs, timestamps, renames, whitespace) — regenerating a model rewrites comment banners constantly, and "only the comment banner moved" triages very differently from "an identifier was renamed". The two are counted separately in the CLI summary, get their own report badge, and have their own tree marker. A file mixing comments *with* other noise stays Unimportant: the narrower claim has to be exact.
+**Comment changes are their own category.** A file whose differences are *only* comments is reported as **Comment**, separate from **Unimportant** (UUIDs, timestamps, renames, whitespace) — regenerating a model rewrites comment banners constantly, and "only the comment banner moved" triages very differently from "an identifier was renamed". The split runs all the way down: separate counts in the CLI summary, its own report badge and tree marker, and its own colour (**purple**, vs yellow for other noise) on the changed *lines* in both the HTML report and the viewer. A file mixing comments *with* other noise stays Unimportant: the narrower claim has to be exact.
 
 Fail-safe principle throughout: **if it cannot be proven to be noise, it is marked REAL.**
 

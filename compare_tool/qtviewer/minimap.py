@@ -21,11 +21,13 @@ _MAX_CHAR_W = 3.0    # px per char at most, so short lines don't stretch full wi
 
 # dim token colour per mode (ctx = plain code grey); changed rows also get a
 # translucent full-width strip so diffs pop on the map
-_TOKEN = {'ctx': '#565b62', 'real': '#e8908d', 'minor': '#d8c070', 'moved': '#7fb0d9'}
+_TOKEN = {'ctx': '#565b62', 'real': '#e8908d', 'comment': '#a99ce8',
+          'minor': '#d8c070', 'moved': '#7fb0d9'}
 _STRIP = {
-    'real':  QColor(217, 82, 79, 70),
-    'minor': QColor(200, 160, 48, 70),
-    'moved': QColor(63, 127, 176, 70),
+    'real':    QColor(217, 82, 79, 70),
+    'comment': QColor(140, 120, 210, 70),
+    'minor':   QColor(200, 160, 48, 70),
+    'moved':   QColor(63, 127, 176, 70),
 }
 _VIEW_FILL = QColor(255, 255, 255, 26)
 _VIEW_BORDER = QColor(190, 190, 190, 120)

@@ -102,10 +102,17 @@ class TestAlignedRows(unittest.TestCase):
         self.assertEqual(old_nos, list(range(1, len(old.split('\n')) + 1)))
         self.assertEqual(new_nos, list(range(1, len(new.split('\n')) + 1)))
 
-    def test_minor_hunk_rows_tagged_minor(self):
+    def test_comment_hunk_rows_get_their_own_mode(self):
         _r, rows = self._rows("/* gen Mon */\nint x = 1;\n",
                              "/* gen Tue */\nint x = 1;\n")
+        self.assertTrue(any(row.mode == 'comment' for row in rows))
+        self.assertFalse(any(row.mode == 'minor' for row in rows))
+
+    def test_other_noise_rows_stay_minor(self):
+        _r, rows = self._rows('<A UUID="1">\n<B>x</B>\n</A>\n',
+                              '<A UUID="9">\n<B>x</B>\n</A>\n', 'f.arxml')
         self.assertTrue(any(row.mode == 'minor' for row in rows))
+        self.assertFalse(any(row.mode == 'comment' for row in rows))
 
     def test_moved_block_rows_tagged_moved(self):
         old = ("void Alpha(void)\n{\n  a = 1;\n  b = 2;\n}\n"

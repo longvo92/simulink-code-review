@@ -67,12 +67,16 @@ table.diff td { padding: 1px 6px; vertical-align: top; white-space: pre-wrap;
 td.ln { width: 44px; color: #6a6a6a; text-align: right; user-select: none; }
 td.del { background: #3a2222; } td.add { background: #1f3a24; }
 td.delm, td.addm { background: #3c3418; }
+td.delc, td.addc { background: #332a42; }
 td.mvd, td.mva { background: #1d2f3e; }
 td.ctx { color: #9a9a9a; }
 td.del .chg-seg { background: #7a2f2f; color: #ffc2c2; font-weight: 700; border-radius: 2px; }
 td.add .chg-seg { background: #2f6e3d; color: #c9f7d1; font-weight: 700; border-radius: 2px; }
 td.delm .chg-seg, td.addm .chg-seg { background: #8a6d1f; color: #ffe9a8; font-weight: 700;
                                      border-radius: 2px; }
+td.delc .chg-seg, td.addc .chg-seg { background: #6a5490; color: #e2dbff; font-weight: 700;
+                                     border-radius: 2px; }
+.sw-cmt { background: #6a5490; }
 .sw { display: inline-block; width: 10px; height: 10px; border-radius: 2px;
       margin: 0 4px 0 2px; vertical-align: -1px; }
 .sw-del { background: #7a2f2f; } .sw-add { background: #2f6e3d; } .sw-min { background: #8a6d1f; }
@@ -82,6 +86,9 @@ tr.mvnote td { text-align: center; color: #7fb3d9; background: #26272b; font-siz
 body.hide-ign tr.minor, body.hide-ign .grp-min { display: none; }
 tr.minorph { display: none; }
 body.hide-ign tr.minorph { display: table-row; }
+body.hide-cmt tr.comment, body.hide-cmt .grp-cmt { display: none; }
+tr.commentph { display: none; }
+body.hide-cmt tr.commentph { display: table-row; color: #a99ce8; }
 tr.minorph td { color: #a8935a; }
 .filenote { color: #8a8a8a; font-size: 12px; margin: 2px 0 10px; }
 .renames { font-size: 12px; color: #c8b458; margin: 2px 0 8px; }
@@ -190,6 +197,8 @@ def _group_table(old_lines, new_lines, group):
             mode = 'real'
         elif h['kind'] == 'moved':
             mode = 'moved'
+        elif h['kind'] == 'comment':
+            mode = 'comment'
         else:
             mode = 'minor'
         # changed block, pad shorter side
@@ -198,10 +207,12 @@ def _group_table(old_lines, new_lines, group):
             o_no, o_txt = (hi1 + k + 1, old_lines[hi1 + k]) if hi1 + k < hi2 else ('', None)
             n_no, n_txt = (hj1 + k + 1, new_lines[hj1 + k]) if hj1 + k < hj2 else ('', None)
             rows.append(_row(o_no, o_txt, n_no, n_txt, mode))
-        if mode == 'minor':
-            rows.append('<tr class="gap minorph"><td colspan="4">⋯ {} minor ({}) '
-                        'line{} hidden</td></tr>'
-                        .format(span, _esc(h['kind']), '' if span == 1 else 's'))
+        if mode in _MODE_TR:
+            what = ('comment' if mode == 'comment'
+                    else 'minor ({})'.format(_esc(h['kind'])))
+            rows.append('<tr class="gap {}ph"><td colspan="4">⋯ {} {} line{} '
+                        'hidden</td></tr>'.format(_MODE_TR[mode], span, what,
+                                                  '' if span == 1 else 's'))
         elif mode == 'moved':
             if 'moved_to' in h:
                 note = '⇄ block moved to NEW line {}'.format(h['moved_to'])
@@ -228,8 +239,17 @@ def _groups_html(old_lines, new_lines, hunks):
     Moved blocks never hide: they are real changes, just shown in blue."""
     out = []
     for g in _group_hunks(hunks):
-        minor_only = all(h['kind'] not in ('real', 'moved') for h in g)
-        out.append('<div class="grp{}">'.format(' grp-min' if minor_only else ''))
+        kinds = {h['kind'] for h in g}
+        # a group hides as a whole only when it is ONE hideable category; a
+        # group mixing comment with other noise would otherwise vanish behind
+        # a single badge, so its rows hide individually instead
+        if kinds == {'comment'}:
+            cls = ' grp-cmt'
+        elif not (kinds & {'real', 'moved'}):
+            cls = ' grp-min'
+        else:
+            cls = ''
+        out.append('<div class="grp{}">'.format(cls))
         if any(h['kind'] != 'real' for h in g):
             out.append('<div class="hunklabel">{}</div>'.format(_esc(_group_label(g))))
         out.append(_group_table(old_lines, new_lines, g))
@@ -255,7 +275,11 @@ def _char_diff(old_txt, new_txt):
     return mark(old_txt, o_lo, o_hi), mark(new_txt, n_lo, n_hi)
 
 
-_MODE_CLS = {'real': ('del', 'add'), 'minor': ('delm', 'addm'), 'moved': ('mvd', 'mva')}
+_MODE_CLS = {'real': ('del', 'add'), 'comment': ('delc', 'addc'),
+             'minor': ('delm', 'addm'), 'moved': ('mvd', 'mva')}
+# noise modes hide with their own badge: comment rows with Comment, the other
+# ignorable kinds with Unimportant
+_MODE_TR = {'comment': 'comment', 'minor': 'minor'}
 
 
 def _row(o_no, o_txt, n_no, n_txt, mode):
@@ -272,7 +296,7 @@ def _row(o_no, o_txt, n_no, n_txt, mode):
         else:
             l = _esc(o_txt) if o_txt is not None else ''
             r = _esc(n_txt) if n_txt is not None else ''
-    trcls = ' class="minor"' if mode == 'minor' else ''
+    trcls = ' class="{}"'.format(_MODE_TR[mode]) if mode in _MODE_TR else ''
     return ('<tr{}><td class="ln">{}</td><td class="{}">{}</td>'
             '<td class="ln">{}</td><td class="{}">{}</td></tr>').format(
                 trcls, o_no, lcls, l, n_no, rcls, r)
@@ -944,7 +968,8 @@ def build_report(results, old_root, new_root):
         parts.append('<div class="legend">'
                      '<span class="sw sw-del"></span>/<span class="sw sw-add"></span>real change&emsp;'
                      '<span class="sw sw-mv"></span>moved block&emsp;'
-                     '<span class="sw sw-min"></span>minor noise</div>')
+                     '<span class="sw sw-cmt"></span>comment&emsp;'
+                     '<span class="sw sw-min"></span>other noise</div>')
         parts.append('<div class="toolbar">'
                      '<button type="button" onclick="document.querySelectorAll(\'details.file,details.model\').forEach(d=>d.open=true)">Expand all</button>'
                      '<button type="button" onclick="document.querySelectorAll(\'details.file,details.model\').forEach(d=>d.open=false)">Collapse all</button>'
