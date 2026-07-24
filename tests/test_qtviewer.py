@@ -70,30 +70,30 @@ class TestFilterNodes(unittest.TestCase):
                 out.append(n.rel)
         return out
 
-    def test_hides_identical_when_off(self):
-        nodes = self._nodes({'a.c': 'identical', 'b.c': 'real-change'})
-        kept = filter_nodes(nodes, show_identical=False)
-        self.assertEqual(self._rels(kept), ['b.c'])
+    def test_no_text_keeps_the_whole_tree(self):
+        mapping = {'a.c': 'identical', 'b.c': 'real-change',
+                   'noise/c.c': 'ignorable-only', 'bad.c': 'error'}
+        nodes = self._nodes(mapping)
+        self.assertEqual(sorted(self._rels(filter_nodes(nodes))),
+                         sorted(mapping))
 
-    def test_hides_unimportant_when_off(self):
-        nodes = self._nodes({'a.c': 'ignorable-only', 'b.c': 'added'})
-        kept = filter_nodes(nodes, show_unimportant=False)
-        self.assertEqual(self._rels(kept), ['b.c'])
-
-    def test_empty_folder_collapses_away(self):
-        nodes = self._nodes({'noise/a.c': 'identical', 'real/b.c': 'real-change'})
-        kept = filter_nodes(nodes, show_identical=False)
-        self.assertEqual([n.name for n in kept], ['real'])
+    def test_status_never_removes_a_row(self):
+        # structure must stay stable whatever the verdicts are -- an identical
+        # or noise-only file keeps its place in the tree
+        nodes = self._nodes({'quiet/a.c': 'identical', 'quiet/b.c': 'ignorable-only'})
+        kept = filter_nodes(nodes)
+        self.assertEqual([n.name for n in kept], ['quiet'])
+        self.assertEqual(self._rels(kept), ['quiet/a.c', 'quiet/b.c'])
 
     def test_text_filter_matches_path_substring(self):
         nodes = self._nodes({'src/ctrl.c': 'real-change', 'src/plant.c': 'real-change'})
         kept = filter_nodes(nodes, text='ctrl')
         self.assertEqual(self._rels(kept), ['src/ctrl.c'])
 
-    def test_error_never_hidden_by_status_filters(self):
-        nodes = self._nodes({'bad.c': 'error'})
-        kept = filter_nodes(nodes, show_identical=False, show_unimportant=False)
-        self.assertEqual(self._rels(kept), ['bad.c'])
+    def test_text_filter_drops_folders_without_a_match(self):
+        nodes = self._nodes({'a/x.c': 'real-change', 'b/y.c': 'real-change'})
+        kept = filter_nodes(nodes, text='x.c')
+        self.assertEqual([n.name for n in kept], ['a'])
 
 
 if __name__ == '__main__':

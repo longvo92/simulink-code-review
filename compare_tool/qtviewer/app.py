@@ -9,10 +9,10 @@ import sys
 
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QAction, QBrush, QColor, QPalette
-from PySide6.QtWidgets import (QApplication, QCheckBox, QFileDialog, QHBoxLayout,
-                               QLabel, QLineEdit, QMainWindow, QProgressBar,
-                               QSplitter, QTreeWidget, QTreeWidgetItem,
-                               QVBoxLayout, QWidget)
+from PySide6.QtWidgets import (QApplication, QFileDialog, QLabel, QLineEdit,
+                               QMainWindow, QProgressBar, QSplitter,
+                               QTreeWidget, QTreeWidgetItem, QVBoxLayout,
+                               QWidget)
 
 from ..diff_engine import RULES
 from ..scanner import summarize
@@ -53,31 +53,18 @@ class MainWindow(QMainWindow):
         self.tree.setUniformRowHeights(True)
         self.tree.itemSelectionChanged.connect(self._on_select)
 
-        # filter row: path search + status toggles. The full tree is shown by
-        # default (like Beyond Compare's folder view) -- untick a box to hide
-        # Identical / Unimportant files when you want to focus on real changes.
+        # path search only. Verdicts never remove a row: the folder structure
+        # must stay stable so the reviewer's bearings do not shift when change
+        # categories are folded away.
         self.filter_edit = QLineEdit()
         self.filter_edit.setPlaceholderText('Filter by path…')
         self.filter_edit.setClearButtonEnabled(True)
         self.filter_edit.textChanged.connect(self._refresh_tree)
-        self.cb_identical = QCheckBox('Identical')
-        self.cb_identical.setChecked(True)
-        self.cb_unimportant = QCheckBox('Unimportant')
-        self.cb_unimportant.setChecked(True)
-        self.cb_identical.toggled.connect(self._refresh_tree)
-        self.cb_unimportant.toggled.connect(self._refresh_tree)
-        toggles = QHBoxLayout()
-        toggles.setContentsMargins(0, 0, 0, 0)
-        toggles.addWidget(QLabel('Show:'))
-        toggles.addWidget(self.cb_identical)
-        toggles.addWidget(self.cb_unimportant)
-        toggles.addStretch(1)
         left = QWidget()
         lv = QVBoxLayout(left)
         lv.setContentsMargins(6, 6, 6, 0)
         lv.setSpacing(4)
         lv.addWidget(self.filter_edit)
-        lv.addLayout(toggles)
         lv.addWidget(self.tree, 1)
 
         self.diff = DiffPane()
@@ -190,16 +177,13 @@ class MainWindow(QMainWindow):
     # --- tree fill + selection ---
 
     def _refresh_tree(self):
-        """Rebuild the tree from results under the current filter + toggles.
-        Cheap enough to run on every keystroke; selection is not preserved."""
+        """Rebuild the tree from results under the current path filter. Cheap
+        enough to run on every keystroke; selection is not preserved."""
         self.tree.clear()
         if not self.results:
             return
-        nodes = filter_nodes(build_nodes(self.results),
-                             show_identical=self.cb_identical.isChecked(),
-                             show_unimportant=self.cb_unimportant.isChecked(),
-                             text=self.filter_edit.text())
-        self._fill_tree(nodes)
+        self._fill_tree(filter_nodes(build_nodes(self.results),
+                                     text=self.filter_edit.text()))
 
     def _fill_tree(self, nodes):
         def add(parent, node):
