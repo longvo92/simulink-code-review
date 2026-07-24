@@ -15,9 +15,9 @@ from pathlib import Path
 
 from PySide6.QtCore import QRect, QSize, Qt
 from PySide6.QtGui import (QColor, QFont, QPainter, QTextBlockFormat,
-                           QTextCharFormat, QTextCursor)
+                           QTextCharFormat, QTextCursor, QTextFormat)
 from PySide6.QtWidgets import (QHBoxLayout, QLabel, QPlainTextEdit, QSplitter,
-                               QStackedWidget, QVBoxLayout, QWidget)
+                               QStackedWidget, QTextEdit, QVBoxLayout, QWidget)
 
 from ..scanner import looks_binary, read_text
 from ..view_model import aligned_rows, char_span
@@ -62,18 +62,26 @@ def _semantic_summary(result):
     chips = [c for c in chips if c]
     return 'AUTOSAR / A2L:   ' + '   ·   '.join(chips) if chips else ''
 
-# per-side row background by mode; None = context (editor base colour)
+# per-side row background by mode; None = context (editor base colour).
+# comment noise is purple, matching its own file verdict, so "only the banner
+# moved" is distinguishable at a glance from a renamed identifier (yellow).
 _ROW_BG = {
-    ('real', 'old'):  '#3a2222', ('real', 'new'):  '#1f3a24',
-    ('minor', 'old'): '#3c3418', ('minor', 'new'): '#3c3418',
-    ('moved', 'old'): '#1d2f3e', ('moved', 'new'): '#1d2f3e',
+    ('real', 'old'):    '#3a2222', ('real', 'new'):    '#1f3a24',
+    ('comment', 'old'): '#332a42', ('comment', 'new'): '#332a42',
+    ('minor', 'old'):   '#3c3418', ('minor', 'new'):   '#3c3418',
+    ('moved', 'old'):   '#1d2f3e', ('moved', 'new'):   '#1d2f3e',
 }
 # inline changed-span background by mode/side
 _SEG_BG = {
-    ('real', 'old'):  '#7a2f2f', ('real', 'new'):  '#2f6e3d',
-    ('minor', 'old'): '#8a6d1f', ('minor', 'new'): '#8a6d1f',
-    ('moved', 'old'): '#2f5a7a', ('moved', 'new'): '#2f5a7a',
+    ('real', 'old'):    '#7a2f2f', ('real', 'new'):    '#2f6e3d',
+    ('comment', 'old'): '#6a5490', ('comment', 'new'): '#6a5490',
+    ('minor', 'old'):   '#8a6d1f', ('minor', 'new'):   '#8a6d1f',
+    ('moved', 'old'):   '#2f5a7a', ('moved', 'new'):   '#2f5a7a',
 }
+# translucent overlay marking the change the reviewer is currently on, so
+# F7/F8 are visibly doing something even when the file fits on screen and
+# there is nothing to scroll
+_CUR_BG = QColor(255, 255, 255, 34)
 _FILLER_BG = '#26272b'   # the absent side of an insert/delete
 _ADD_BG = '#1f3a24'
 _DEL_BG = '#3a2222'
@@ -196,15 +204,20 @@ class DiffPane(QStackedWidget):
         dl = QVBoxLayout(diff_page)
         dl.setContentsMargins(0, 0, 0, 0)
         dl.setSpacing(0)
+        # header + semantic line stay at their natural (small) height; the
+        # editor body takes ALL remaining vertical space (stretch=1), so the
+        # two-pane diff fills the pane from just under the header instead of
+        # being pushed to the bottom by an oversized header gap
         dl.addWidget(self._header)
         dl.addWidget(self._sem)
-        dl.addWidget(body)
+        dl.addWidget(body, 1)
 
         self.addWidget(msg_page)   # index 0
         self.addWidget(diff_page)  # index 1
 
         self.rows = []
         self._stops = []           # first row of each real/moved change block
+        self._head_base = ''       # header without the "change k of N" suffix
         self._syncing = False
         self._link_scrolls()
 
@@ -229,6 +242,17 @@ class DiffPane(QStackedWidget):
 
     def clear(self):
         self._msg.setText(_HINT)
+        self.setCurrentIndex(0)
+
+    def show_drop_hint(self, old=None):
+        """Landing screen when no folders are chosen yet."""
+        if old:
+            self._msg.setText('OLD folder:\n{}\n\nNow drop the NEW folder onto '
+                              'this window.'.format(old))
+        else:
+            self._msg.setText('Drag the OLD and NEW folders onto this window\n'
+                              '(drop both at once, or one after the other).\n\n'
+                              'Or use "Open folders…" in the toolbar.')
         self.setCurrentIndex(0)
 
     def show_file(self, rel, result, old_root, new_root):
@@ -259,9 +283,6 @@ class DiffPane(QStackedWidget):
         if result.get('binary'):
             self._message('{}\n\nBinary file differs.'.format(rel))
             return
-        if status == 'identical':
-            self._message('{}\n\nIdentical.'.format(rel))
-            return
         if status == 'added':
             if looks_binary(new_p):
                 self._message('{}\n\nBinary file added.'.format(rel))
@@ -274,10 +295,14 @@ class DiffPane(QStackedWidget):
                 return
             self._load_one_side(rel, 'Deleted', read_text(old_p).split('\n'), 'old')
             return
-        # real-change / ignorable-only
+        # real-change / ignorable-only / identical all show the two-pane code;
+        # identical has no hunks so it renders as plain context (no highlights)
+        if status == 'identical' and (looks_binary(old_p) or looks_binary(new_p)):
+            self._message('{}\n\nIdentical (binary).'.format(rel))
+            return
         old_lines = read_text(old_p).split('\n')
         new_lines = read_text(new_p).split('\n')
-        self.rows = aligned_rows(old_lines, new_lines, result['hunks'])
+        self.rows = aligned_rows(old_lines, new_lines, result.get('hunks', []))
         self._load_rows(rel, status, result)
 
     def _load_rows(self, rel, status, result=None):
@@ -286,6 +311,7 @@ class DiffPane(QStackedWidget):
         head = '{}   ·   {}'.format(rel, status)
         if n_moved:
             head += '   ·   {} moved line(s)'.format(n_moved)
+        self._head_base = head
         self._header.setText(head)
         sem = _semantic_summary(result or {})
         self._sem.setText(sem)
@@ -323,8 +349,14 @@ class DiffPane(QStackedWidget):
                 self._stops.append(i)
             was_change = is_change
         self.setCurrentIndex(1)
+        # start at the top of the file; jump to the first change only if there
+        # is one (identical / noise-only files stay at line 1)
         if self._stops:
-            self._center(self._stops[0])
+            self._reveal(self._stops[0])
+        else:
+            self.old_edit.setExtraSelections([])
+            self.new_edit.setExtraSelections([])
+            self.old_edit.verticalScrollBar().setValue(0)
 
     def _load_one_side(self, rel, label, lines, side):
         self.rows = []
@@ -363,21 +395,63 @@ class DiffPane(QStackedWidget):
         fmt.setBackground(QColor(color))
         cursor.setCharFormat(fmt)
 
-    def _center(self, row):
+    def _reveal(self, row, context=3):
+        """Scroll so `row` sits near the TOP of the pane (a few lines of
+        context above), not vertically centred -- centring leaves the whole
+        upper half blank, which reads as the diff starting 'too low'. The old
+        editor drives; the scrollbar mirror carries the new pane along.
+
+        The change block is also highlighted on both sides: without it, a file
+        that fits on screen has nothing to scroll and the navigation looks
+        dead even though it moved."""
         block = self.old_edit.document().findBlockByNumber(row)
         self.old_edit.setTextCursor(QTextCursor(block))
-        self.old_edit.centerCursor()
+        # NoWrap: the vertical scrollbar is in lines, so its value is the top
+        # visible line index
+        self.old_edit.verticalScrollBar().setValue(max(0, row - context))
+        self._highlight_block(row)
+        self._update_position(row)
 
-    # --- change navigation (real/moved blocks; minor noise is skipped) ---
+    def _highlight_block(self, row):
+        """Overlay the whole contiguous change block containing `row`."""
+        rows = self.rows
+        if not rows or row >= len(rows):
+            return
+        start = end = row
+        while start > 0 and rows[start - 1].mode == rows[row].mode != 'ctx':
+            start -= 1
+        while end + 1 < len(rows) and rows[end + 1].mode == rows[row].mode != 'ctx':
+            end += 1
+        for editor in (self.old_edit, self.new_edit):
+            sels = []
+            for i in range(start, end + 1):
+                sel = QTextEdit.ExtraSelection()
+                sel.format.setBackground(_CUR_BG)
+                sel.format.setProperty(QTextFormat.FullWidthSelection, True)
+                cur = QTextCursor(editor.document().findBlockByNumber(i))
+                cur.clearSelection()
+                sel.cursor = cur
+                sels.append(sel)
+            editor.setExtraSelections(sels)
+
+    def _update_position(self, row):
+        if not self._stops:
+            return
+        idx = max(i for i, s in enumerate(self._stops) if s <= row) + 1 \
+            if any(s <= row for s in self._stops) else 1
+        self._header.setText('{}   ·   change {} of {}'.format(
+            self._head_base, idx, len(self._stops)))
+
+    # --- change navigation (real/moved blocks; noise is skipped) ---
 
     def next_change(self):
         if not self._stops:
             return
         cur = self.old_edit.textCursor().blockNumber()
-        self._center(next((s for s in self._stops if s > cur), self._stops[0]))
+        self._reveal(next((s for s in self._stops if s > cur), self._stops[0]))
 
     def prev_change(self):
         if not self._stops:
             return
         cur = self.old_edit.textCursor().blockNumber()
-        self._center(next((s for s in reversed(self._stops) if s < cur), self._stops[-1]))
+        self._reveal(next((s for s in reversed(self._stops) if s < cur), self._stops[-1]))

@@ -24,6 +24,7 @@ h1 { font-size: 20px; } h2 { font-size: 15px; margin: 28px 0 6px; color: #e8e8e8
 .badge:hover { border-color: #888; }
 .badge.off { opacity: .35; text-decoration: line-through; }
 .b-real { background: #6e2b2b; color: #ffb3b3; } .b-ign { background: #5c522a; color: #ffe28a; }
+.b-cmt { background: #3d3a52; color: #c9c2f0; }
 .b-id { background: #333; color: #aaa; } .b-add { background: #2b5232; color: #a8e6b0; }
 .b-del { background: #4a2b52; color: #d9a8e6; }
 .b-err { background: #7a1f1f; color: #ffc2c2; border-color: #b04a4a; cursor: default; }
@@ -35,7 +36,7 @@ h1 { font-size: 20px; } h2 { font-size: 15px; margin: 28px 0 6px; color: #e8e8e8
 .errbox code { background: #5c2626; }
 .hint { color: #7a7a7a; font-size: 11px; margin: -14px 0 18px; }
 body.hide-real .sec-real, body.hide-ign .sec-ign, body.hide-add .sec-add,
-body.hide-del .sec-del, body.hide-id .sec-id { display: none; }
+body.hide-del .sec-del, body.hide-id .sec-id, body.hide-cmt .sec-cmt { display: none; }
 ul.files { margin: 4px 0 14px; padding-left: 22px; font-size: 13px; }
 ul.files li { margin: 2px 0; }
 .kinds { color: #8a8a8a; font-size: 12px; }
@@ -53,6 +54,8 @@ ul.files li { margin: 2px 0; }
 .tmark { display: inline-block; width: 14px; font-weight: bold; }
 .t-real { color: #ff7b7b; } .t-ign { color: #e6c85c; } .t-add { color: #7bd88a; }
 .t-del { color: #c88ad8; } .t-id { color: #777; } .t-err { color: #ff5c5c; }
+.t-cmt { color: #9d92e0; }
+.tf.tc-cmt { color: #c9c2f0; }
 .tf.tc-real { color: #ffb3b3; } .tf.tc-ign { color: #ffe28a; } .tf.tc-add { color: #a8e6b0; }
 .tf.tc-del { color: #d9a8e6; text-decoration: line-through; } .tf.tc-id { color: #8a8a8a; }
 .tf.tc-err { color: #ffb3b3; font-weight: 700; }
@@ -64,12 +67,16 @@ table.diff td { padding: 1px 6px; vertical-align: top; white-space: pre-wrap;
 td.ln { width: 44px; color: #6a6a6a; text-align: right; user-select: none; }
 td.del { background: #3a2222; } td.add { background: #1f3a24; }
 td.delm, td.addm { background: #3c3418; }
+td.delc, td.addc { background: #332a42; }
 td.mvd, td.mva { background: #1d2f3e; }
 td.ctx { color: #9a9a9a; }
 td.del .chg-seg { background: #7a2f2f; color: #ffc2c2; font-weight: 700; border-radius: 2px; }
 td.add .chg-seg { background: #2f6e3d; color: #c9f7d1; font-weight: 700; border-radius: 2px; }
 td.delm .chg-seg, td.addm .chg-seg { background: #8a6d1f; color: #ffe9a8; font-weight: 700;
                                      border-radius: 2px; }
+td.delc .chg-seg, td.addc .chg-seg { background: #6a5490; color: #e2dbff; font-weight: 700;
+                                     border-radius: 2px; }
+.sw-cmt { background: #6a5490; }
 .sw { display: inline-block; width: 10px; height: 10px; border-radius: 2px;
       margin: 0 4px 0 2px; vertical-align: -1px; }
 .sw-del { background: #7a2f2f; } .sw-add { background: #2f6e3d; } .sw-min { background: #8a6d1f; }
@@ -79,6 +86,9 @@ tr.mvnote td { text-align: center; color: #7fb3d9; background: #26272b; font-siz
 body.hide-ign tr.minor, body.hide-ign .grp-min { display: none; }
 tr.minorph { display: none; }
 body.hide-ign tr.minorph { display: table-row; }
+body.hide-cmt tr.comment, body.hide-cmt .grp-cmt { display: none; }
+tr.commentph { display: none; }
+body.hide-cmt tr.commentph { display: table-row; color: #a99ce8; }
 tr.minorph td { color: #a8935a; }
 .filenote { color: #8a8a8a; font-size: 12px; margin: 2px 0 10px; }
 .renames { font-size: 12px; color: #c8b458; margin: 2px 0 8px; }
@@ -102,6 +112,7 @@ details.file > .body { padding: 0 14px 12px; }
 summary .hcount { color: #8a8a8a; font-size: 12px; font-weight: normal; }
 summary .tag { display: inline-block; padding: 1px 8px; border-radius: 8px; font-size: 11px; }
 .tag-real { background: #6e2b2b; color: #ffb3b3; } .tag-ign { background: #5c522a; color: #ffe28a; }
+.tag-cmt { background: #3d3a52; color: #c9c2f0; }
 .tag-add { background: #2b5232; color: #a8e6b0; } .tag-del { background: #4a2b52; color: #d9a8e6; }
 .tag-err { background: #7a1f1f; color: #ffc2c2; }
 .hunklabel { color: #c8b458; font-size: 11px; margin: 10px 0 0; text-transform: uppercase;
@@ -123,6 +134,7 @@ table.ov a:hover { color: #fff; }
 .cnt { margin-right: 10px; white-space: nowrap; }
 .cnt-real { color: #ffb3b3; } .cnt-add { color: #a8e6b0; } .cnt-del { color: #d9a8e6; }
 .cnt-ign { color: #ffe28a; } .cnt-id { color: #8a8a8a; } .cnt-err { color: #ff9d9d; font-weight: 700; }
+.cnt-cmt { color: #c9c2f0; }
 .aut { color: #9a9a9a; }
 .aut .a-add { color: #7bd88a; } .aut .a-del { color: #ff7b7b; } .aut .a-chg { color: #7fb3d9; }
 .ifgroup { color: #8a8a8a; font-size: 11px; text-transform: uppercase; letter-spacing: .5px;
@@ -185,6 +197,8 @@ def _group_table(old_lines, new_lines, group):
             mode = 'real'
         elif h['kind'] == 'moved':
             mode = 'moved'
+        elif h['kind'] == 'comment':
+            mode = 'comment'
         else:
             mode = 'minor'
         # changed block, pad shorter side
@@ -193,10 +207,12 @@ def _group_table(old_lines, new_lines, group):
             o_no, o_txt = (hi1 + k + 1, old_lines[hi1 + k]) if hi1 + k < hi2 else ('', None)
             n_no, n_txt = (hj1 + k + 1, new_lines[hj1 + k]) if hj1 + k < hj2 else ('', None)
             rows.append(_row(o_no, o_txt, n_no, n_txt, mode))
-        if mode == 'minor':
-            rows.append('<tr class="gap minorph"><td colspan="4">⋯ {} minor ({}) '
-                        'line{} hidden</td></tr>'
-                        .format(span, _esc(h['kind']), '' if span == 1 else 's'))
+        if mode in _MODE_TR:
+            what = ('comment' if mode == 'comment'
+                    else 'minor ({})'.format(_esc(h['kind'])))
+            rows.append('<tr class="gap {}ph"><td colspan="4">⋯ {} {} line{} '
+                        'hidden</td></tr>'.format(_MODE_TR[mode], span, what,
+                                                  '' if span == 1 else 's'))
         elif mode == 'moved':
             if 'moved_to' in h:
                 note = '⇄ block moved to NEW line {}'.format(h['moved_to'])
@@ -223,8 +239,17 @@ def _groups_html(old_lines, new_lines, hunks):
     Moved blocks never hide: they are real changes, just shown in blue."""
     out = []
     for g in _group_hunks(hunks):
-        minor_only = all(h['kind'] not in ('real', 'moved') for h in g)
-        out.append('<div class="grp{}">'.format(' grp-min' if minor_only else ''))
+        kinds = {h['kind'] for h in g}
+        # a group hides as a whole only when it is ONE hideable category; a
+        # group mixing comment with other noise would otherwise vanish behind
+        # a single badge, so its rows hide individually instead
+        if kinds == {'comment'}:
+            cls = ' grp-cmt'
+        elif not (kinds & {'real', 'moved'}):
+            cls = ' grp-min'
+        else:
+            cls = ''
+        out.append('<div class="grp{}">'.format(cls))
         if any(h['kind'] != 'real' for h in g):
             out.append('<div class="hunklabel">{}</div>'.format(_esc(_group_label(g))))
         out.append(_group_table(old_lines, new_lines, g))
@@ -250,7 +275,11 @@ def _char_diff(old_txt, new_txt):
     return mark(old_txt, o_lo, o_hi), mark(new_txt, n_lo, n_hi)
 
 
-_MODE_CLS = {'real': ('del', 'add'), 'minor': ('delm', 'addm'), 'moved': ('mvd', 'mva')}
+_MODE_CLS = {'real': ('del', 'add'), 'comment': ('delc', 'addc'),
+             'minor': ('delm', 'addm'), 'moved': ('mvd', 'mva')}
+# noise modes hide with their own badge: comment rows with Comment, the other
+# ignorable kinds with Unimportant
+_MODE_TR = {'comment': 'comment', 'minor': 'minor'}
 
 
 def _row(o_no, o_txt, n_no, n_txt, mode):
@@ -267,7 +296,7 @@ def _row(o_no, o_txt, n_no, n_txt, mode):
         else:
             l = _esc(o_txt) if o_txt is not None else ''
             r = _esc(n_txt) if n_txt is not None else ''
-    trcls = ' class="minor"' if mode == 'minor' else ''
+    trcls = ' class="{}"'.format(_MODE_TR[mode]) if mode in _MODE_TR else ''
     return ('<tr{}><td class="ln">{}</td><td class="{}">{}</td>'
             '<td class="ln">{}</td><td class="{}">{}</td></tr>').format(
                 trcls, o_no, lcls, l, n_no, rcls, r)
@@ -277,6 +306,7 @@ def _row(o_no, o_txt, n_no, n_txt, mode):
 # 'error' has no body.hide-* CSS rule on purpose: it can never be hidden
 _TREE = {
     'real-change':    ('≠', 't-real', 'sec-real'),   # ≠
+    'comment-only':   ('≉', 't-cmt',  'sec-cmt'),    # ≉ comments only
     'ignorable-only': ('≈', 't-ign',  'sec-ign'),    # ≈ minor
     'added':          ('+',      't-add',  'sec-add'),
     'deleted':        ('−', 't-del',  'sec-del'),    # −
@@ -287,15 +317,18 @@ _TREE = {
 # convention (git: Modified/Added/Deleted, Beyond Compare: Unimportant, Identical)
 _LABEL = {
     'real-change':    ('Modified',    'tag-real'),
+    'comment-only':   ('Comment',     'tag-cmt'),
     'ignorable-only': ('Unimportant', 'tag-ign'),
     'added':          ('Added',       'tag-add'),
     'deleted':        ('Deleted',     'tag-del'),
     'error':          ('Error',       'tag-err'),
 }
-_PRIO = {'error': 5, 'real-change': 4, 'ignorable-only': 3, 'added': 2, 'deleted': 2,
-         'identical': 1}
+_PRIO = {'error': 6, 'real-change': 5, 'ignorable-only': 4, 'comment-only': 3,
+         'added': 2, 'deleted': 2, 'identical': 1}
 # tree-marker tooltips (folder tree has no legend line; hover explains)
-_STATUS_TITLE = {'real-change': 'Modified', 'ignorable-only': 'Unimportant (noise only)',
+_STATUS_TITLE = {'real-change': 'Modified',
+                 'comment-only': 'Comment changes only',
+                 'ignorable-only': 'Unimportant (noise only)',
                  'added': 'Added', 'deleted': 'Deleted', 'identical': 'Identical',
                  'error': 'Error — NOT compared'}
 
@@ -306,8 +339,8 @@ SHARED_GROUP = 'Shared / other'
 _ARXML_SPLIT_RE = re.compile(
     r'(.+)_(component|datatypes?|interfaces?|implementation|behavior|timing)$',
     re.IGNORECASE)
-_DETAIL_ORDER = {'error': -1, 'real-change': 0, 'ignorable-only': 1, 'added': 2,
-                 'deleted': 3}
+_DETAIL_ORDER = {'error': -1, 'real-change': 0, 'comment-only': 1,
+                 'ignorable-only': 2, 'added': 3, 'deleted': 4}
 
 
 def _stem(rel):
@@ -374,8 +407,8 @@ def _detail_order(rels, results):
 
 def _counts_html(rels, results):
     """Colored per-status count spans for one model group + raw counts."""
-    c = {'real-change': 0, 'ignorable-only': 0, 'added': 0, 'deleted': 0,
-         'identical': 0, 'error': 0}
+    c = {'real-change': 0, 'comment-only': 0, 'ignorable-only': 0, 'added': 0,
+         'deleted': 0, 'identical': 0, 'error': 0}
     for rel in rels:
         c[results[rel]['status']] += 1
     bits = []
@@ -383,6 +416,7 @@ def _counts_html(rels, results):
                             ('real-change', 'Modified', 'cnt-real'),
                             ('added', 'Added', 'cnt-add'),
                             ('deleted', 'Deleted', 'cnt-del'),
+                            ('comment-only', 'Comment', 'cnt-cmt'),
                             ('ignorable-only', 'Unimportant', 'cnt-ign')):
         if c[key]:
             bits.append('<span class="cnt {}">{} {}</span>'.format(cls, c[key], label))
@@ -719,8 +753,8 @@ def _file_section(rel, results, old_root, new_root, anchors):
                                   for a, b in sorted(r['renames'].items()))
                 parts.append('<div class="renames">Renames ignored: {}</div>'.format(pairs))
             parts.append(_groups_html(old_lines, new_lines, hunks))
-    elif status == 'ignorable-only':
-        parts.append(_file_open(anchors[rel], rel, 'ignorable-only', _esc(_kinds_of(r))))
+    elif status in ('comment-only', 'ignorable-only'):
+        parts.append(_file_open(anchors[rel], rel, status, _esc(_kinds_of(r))))
         if not r['hunks']:
             parts.append('<div class="filenote">Line endings / BOM only; '
                          'no content difference.</div>')
@@ -833,10 +867,12 @@ def build_arxml_report(results, old_root, new_root):
         badges.append('<span class="badge b-err">{} error(s) &mdash; '
                       'incomplete</span>'.format(counts['error']))
     parts.append('<div class="summary">{}</div>'.format(''.join(badges)))
-    if counts['ignorable-only']:
+    noise = counts['ignorable-only'] + counts['comment-only']
+    if noise:
         parts.append('<div class="hint">{} file(s) with noise-only differences '
-                     '(UUIDs / timestamps / comments / whitespace) not listed.'
-                     '</div>'.format(counts['ignorable-only']))
+                     '({} comment-only, {} other noise: UUIDs / timestamps / '
+                     'whitespace) not listed.</div>'.format(
+                         noise, counts['comment-only'], counts['ignorable-only']))
 
     sign = {'real-change': ('if-chg', '~'), 'added': ('if-add', '+'),
             'deleted': ('if-del', '−')}
@@ -881,7 +917,7 @@ def build_report(results, old_root, new_root):
     parts = []
     parts.append('<!DOCTYPE html><html><head><meta charset="utf-8">'
                  '<title>AUTOSAR Code Generation Report</title><style>{}</style></head>'
-                 '<body class="hide-id hide-ign">'.format(_CSS))
+                 '<body class="hide-id hide-ign hide-cmt">'.format(_CSS))
     parts.append('<h1>AUTOSAR Code Generation Report</h1>')
     parts.append('<div class="meta">OLD <code>{}</code> &rarr; NEW <code>{}</code>'
                  ' &middot; {}</div>'.format(
@@ -892,13 +928,14 @@ def build_report(results, old_root, new_root):
                  if counts['error'] else '')
     parts.append('<div class="summary">' + err_badge +
                  '<span class="badge b-real" onclick="tg(this,\'real\')">{real-change} Modified</span>'
+                 '<span class="badge b-cmt off" onclick="tg(this,\'cmt\')">{comment-only} Comment</span>'
                  '<span class="badge b-ign off" onclick="tg(this,\'ign\')">{ignorable-only} Unimportant</span>'
                  '<span class="badge b-add" onclick="tg(this,\'add\')">{added} Added</span>'
                  '<span class="badge b-del" onclick="tg(this,\'del\')">{deleted} Deleted</span>'
                  '<span class="badge b-id off" onclick="tg(this,\'id\')">{identical} Identical</span>'
                  '</div>'.format(**counts))
     parts.append('<div class="hint">Click a badge to show/hide a category. '
-                 'Unimportant and Identical start hidden &mdash; only real '
+                 'Comment, Unimportant and Identical start hidden &mdash; only real '
                  'changes are shown.</div>')
 
     groups = _model_groups(results)
@@ -931,7 +968,8 @@ def build_report(results, old_root, new_root):
         parts.append('<div class="legend">'
                      '<span class="sw sw-del"></span>/<span class="sw sw-add"></span>real change&emsp;'
                      '<span class="sw sw-mv"></span>moved block&emsp;'
-                     '<span class="sw sw-min"></span>minor noise</div>')
+                     '<span class="sw sw-cmt"></span>comment&emsp;'
+                     '<span class="sw sw-min"></span>other noise</div>')
         parts.append('<div class="toolbar">'
                      '<button type="button" onclick="document.querySelectorAll(\'details.file,details.model\').forEach(d=>d.open=true)">Expand all</button>'
                      '<button type="button" onclick="document.querySelectorAll(\'details.file,details.model\').forEach(d=>d.open=false)">Collapse all</button>'

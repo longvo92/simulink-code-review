@@ -90,20 +90,18 @@ python -m compare_tool --qt <old_gen_folder> <new_gen_folder>
 
 A Beyond-Compare-style desktop app (PySide6) for reviewing changes interactively instead of scrolling an HTML report:
 
-- **Folder tree** on the left, each file coloured by verdict (Modified / Unimportant / Added / Deleted / Identical / **NOT compared**). A path filter and *Show: Identical / Unimportant* toggles narrow it down; by default both are off, so the tree opens on real changes only.
-- **Two-pane diff** on the right: old and new aligned line-for-line and scrolled in lockstep, real changes in red/green, generator noise in yellow, moved blocks in blue, with the exact changed characters highlighted inside each line — the same classification the report uses.
-- **Change minimap** down the right edge: the whole file compressed to one bar per change, with a viewport box; click or drag to jump.
-- **`F7` / `F8`** step to the previous / next real change (noise is skipped). For `.arxml`/`.a2l` files the header shows the AUTOSAR / A2L rollup (`+1 port · ~1 event`, …).
+- **Drag & drop to start**: drop the OLD and NEW folders onto the window (both at once, or one after the other) — no file dialog is forced on you when the app opens. `Open folders…` is still there if you prefer browsing, and the window comes back to the front once you are done picking.
+- **Folder tree** on the left, each file coloured by verdict (Modified / Comment / Unimportant / Added / Deleted / Identical / **NOT compared**). The tree **always shows the whole structure** — a verdict never removes a row, so the layout does not shift under you. A path box filters by name.
+- **Compare-rule toggles** (`Report: Comment / Unimportant`): unticking one re-judges every affected file as **Identical** (that was all there was) or **Modified** (real changes remain). It is instant — the folders are read once and the rules are applied to those results, never by rescanning. Real changes can never be folded away by a toggle.
+- **Two-pane diff** on the right: old and new aligned line-for-line and scrolled in lockstep, real changes in red/green, **comment changes in purple**, other generator noise in yellow, moved blocks in blue, with the exact changed characters highlighted inside each line — the same classification the report uses.
+- **Change minimap** down the right edge, VS Code style: the file's code shape in miniature with the changed lines striped in their colour and a viewport box; click or drag to jump.
+- **`F7` / `F8`** step to the previous / next real change (noise is skipped). The current change block is highlighted on both sides and the header counts `change 3 of 7`, so navigation is visible even in a file that fits on one screen. For `.arxml`/`.a2l` files the header also shows the AUTOSAR / A2L rollup (`+1 port · ~1 event`, …).
+- **Quick-changes panel** at the bottom left: the same rollup `--arxml-only` gives, live — which ARXML/A2L files were updated, plus the port interfaces, software components, ports, runnables, events, RTE access points and A2L objects added (`+`), removed (`−`) or changed (`~`). Click a row to jump to that file. It always reports the scan itself, never the folded view.
+- **`Export report…`** (`Ctrl+E`) writes the same self-contained HTML report the CLI produces and offers to open it. It is built from the **full scan**, not the on-screen view: a category you collapsed here still appears in the file with its real verdict, so an exported report can never show a file as Identical when it is not. (The report's own badges still let the reader hide categories while reading it.)
 
 PySide6 is imported only under `--qt`, so the CLI and the HTML report keep working on a headless box with no Qt installed. Fail-safe is unchanged: an uncompared path raises a red **COMPARE INCOMPLETE** banner and a scan crash shows a loud failure — never an empty, clean-looking tree.
 
-**Standalone `.exe`** — to hand the viewer to colleagues who have no Python, build a single self-contained binary with [PyInstaller](https://pyinstaller.org):
-
-```powershell
-powershell -ExecutionPolicy Bypass -File packaging\build-viewer.ps1
-```
-
-That produces `dist\CodeGenCompareViewer.exe` (~45 MB) from [`packaging/compare-viewer.spec`](packaging/compare-viewer.spec) — double-click to open, or pass two folder paths as arguments to prefill OLD/NEW. PyInstaller does not cross-compile, so build on the OS you are targeting.
+**Standalone `.exe`** — colleagues without Python get the viewer from the same single binary the CLI ships in: run `.\build.ps1` and hand them `dist\compare-tool.exe`. Double-click opens the viewer; see [Single-file build](#single-file-build).
 
 ## What counts as noise
 
@@ -117,6 +115,8 @@ That produces `dist\CodeGenCompareViewer.exe` (~45 MB) from [`packaging/compare-
 | `line-endings` | CRLF vs LF, BOM | all |
 
 Auto-generated name churn is recognised as a `rename`: Embedded Coder temporaries such as `rtb_*`, mangling suffixes and renumbered temporaries change between runs without changing behaviour.
+
+**Comment changes are their own category.** A file whose differences are *only* comments is reported as **Comment**, separate from **Unimportant** (UUIDs, timestamps, renames, whitespace) — regenerating a model rewrites comment banners constantly, and "only the comment banner moved" triages very differently from "an identifier was renamed". The split runs all the way down: separate counts in the CLI summary, its own report badge and tree marker, and its own colour (**purple**, vs yellow for other noise) on the changed *lines* in both the HTML report and the viewer. A file mixing comments *with* other noise stays Unimportant: the narrower claim has to be exact.
 
 Fail-safe principle throughout: **if it cannot be proven to be noise, it is marked REAL.**
 
@@ -162,9 +162,9 @@ Files are grouped by **Simulink model** using the Embedded Coder AUTOSAR blockse
 
 ## HTML report
 
-- **Real changes only by default**: the `Unimportant` and `Identical` badges start off — noise-only files are hidden, and minor (yellow) lines inside a Modified file collapse into a `⋯ N minor lines hidden` placeholder. Turn the badges on when you want to inspect the noise.
-- **Badge summary** at the top using the usual compare-tool vocabulary: **Modified / Unimportant / Added / Deleted / Identical**. Click a badge to show or hide that category.
-- **Folder tree** in Beyond Compare style: `≠` Modified, `≈` Unimportant (comments/noise only), `+` Added, `−` Deleted, `=` Identical (each symbol has a tooltip). Folders expand and collapse, and a folder takes the heaviest status inside it. Clicking a file jumps to its detail entry. The tree **always lists every file** — badges only hide entries in Detailed changes.
+- **Real changes only by default**: the `Comment`, `Unimportant` and `Identical` badges start off — noise-only files are hidden, and minor (yellow) lines inside a Modified file collapse into a `⋯ N minor lines hidden` placeholder. Turn the badges on when you want to inspect the noise.
+- **Badge summary** at the top using the usual compare-tool vocabulary: **Modified / Comment / Unimportant / Added / Deleted / Identical**. Click a badge to show or hide that category.
+- **Folder tree** in Beyond Compare style: `≠` Modified, `≉` Comment (only comments changed), `≈` Unimportant (other noise only), `+` Added, `−` Deleted, `=` Identical (each symbol has a tooltip). Folders expand and collapse, and a folder takes the heaviest status inside it. Clicking a file jumps to its detail entry. The tree **always lists every file** — badges only hide entries in Detailed changes.
 - **Filter box** in the toolbar: type to filter by file name or model name across both the tree and the detailed changes — essential on reports with hundreds of files.
 - **Detailed changes** (grouped by model when detected): Modified files are **expanded by default**, other kinds expand on click, each tagged by colour. Expand all / Collapse all buttons cover whole model groups.
   - Modified: two-column split diff (red/green), real hunks only; noise hunks are summarised by count; moved blocks are blue with their moved to/from reference line.
@@ -187,14 +187,24 @@ The YAML comments list the one-time setup: repo name and codegen paths, plus **C
 ## Single-file build
 
 ```powershell
-.\build.ps1        # dist\compare_tool.pyz  (~26 KB) - for servers that already have Python 3.8+
-.\build.ps1 -Exe   # also dist\compare_tool.exe (~8 MB) - for servers with nothing installed
+.\build.ps1           # dist\compare-tool.exe  - one file, nothing to install on the target
+.\build.ps1 -Pyz      # also dist\compare_tool.pyz (~26 KB) for machines that have Python 3.8+
+.\build.ps1 -PyzOnly  # zipapp only (building it needs no PyInstaller / PySide6)
 ```
 
-Both are a **single file**: copy it to the machine and run it. No pip install, no unpacking.
+`dist\compare-tool.exe` is **one binary carrying all three front ends**:
 
-- **`.pyz` (zipapp, stdlib)**: `python compare_tool.pyz <old> <new> [flags]`. Prefer this when Python is available — small, no build dependencies, not flagged by antivirus.
-- **`.exe` (PyInstaller onefile)**: `compare_tool.exe <old> <new> [flags]`, no Python needed on the target. Building it needs `pip install pyinstaller` on the dev machine, and the executable only runs on the OS it was built on. PyInstaller executables are sometimes blocked by antivirus or AppLocker — fall back to the `.pyz` in that case.
+| Invocation | What happens |
+|---|---|
+| `compare-tool.exe <old> <new> [flags]` | CLI: scan, write the HTML report, exit `0`/`1`/`2` |
+| `compare-tool.exe --qt <old> <new>` | side-by-side viewer |
+| `compare-tool.exe --gui` | tkinter panel |
+| double-click (no arguments) | viewer, prompting for the two folders |
+
+It is deliberately built as a **console** application: a terminal run keeps its stdout *and its exit code*, so the CI gate (`1` = real changes, `2` = compare incomplete) keeps working. GUI modes hide the console window at runtime instead — a windowed build would make the shell stop waiting for the process and throw the exit code away. The trade-off is a brief console flash when you double-click. A crash in GUI mode un-hides the console so the traceback is never swallowed.
+
+- **`.pyz` (zipapp, stdlib)**: `python compare_tool.pyz <old> <new> [flags]`. Prefer it when Python is available — ~26 KB, no build dependencies, not flagged by antivirus. CLI and `--gui` work anywhere; `--qt` additionally needs PySide6 on that machine.
+- **`.exe` (PyInstaller onefile, ~47 MB)**: no Python needed on the target. Building needs `pyinstaller` and `PySide6` on the dev machine (`build.ps1` installs them), and the binary only runs on the OS it was built on. PyInstaller executables are sometimes blocked by antivirus or AppLocker — fall back to the `.pyz` there.
 
 Every CLI flag behaves identically in the packaged builds. `build/` and `dist/` are already in `.gitignore`.
 

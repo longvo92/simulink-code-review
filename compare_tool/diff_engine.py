@@ -208,7 +208,7 @@ def _build_variants(old_text, new_text, ruleset, rename_map):
 def compare_pair(old_text, new_text, path):
     """Compare two file contents. Returns dict:
     {status, hunks, renames, notes}
-    status in {identical, ignorable-only, real-change}
+    status in {identical, comment-only, ignorable-only, real-change}
     """
     result = {'status': 'identical', 'hunks': [], 'renames': {}, 'notes': []}
     if old_text == new_text:
@@ -333,5 +333,18 @@ def compare_pair(old_text, new_text, path):
         hunks.append(hunk)
 
     result['hunks'] = _merge_adjacent(hunks)
-    result['status'] = 'real-change' if real_hunks else 'ignorable-only'
+    result['status'] = _status_of(real_hunks, result['hunks'])
     return result
+
+
+def _status_of(real_hunks, hunks):
+    """Verdict for a compared pair. Comment-only differences get their own
+    status, separate from the other ignorable kinds (UUIDs, timestamps,
+    renames, whitespace): regenerating a model rewrites comment banners
+    constantly, and a reviewer triages 'only the comments moved' very
+    differently from 'an identifier was renamed'. A file mixing comments with
+    other noise stays 'ignorable-only' -- the narrower claim must be exact."""
+    if real_hunks:
+        return 'real-change'
+    kinds = {h['kind'] for h in hunks}
+    return 'comment-only' if kinds == {'comment'} else 'ignorable-only'

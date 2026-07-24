@@ -81,7 +81,7 @@ class TestRealPlusMinor(unittest.TestCase):
         self.assertEqual(len(groups), 1)
         self.assertEqual(_group_label(groups[0]), 'comment + real')
         table = _group_table(old.split('\n'), new.split('\n'), groups[0])
-        self.assertIn('class="delm"', table)  # comment line yellow
+        self.assertIn('class="delc"', table)  # comment line purple
         self.assertIn('class="del"', table)   # real line red
 
     def test_report_shows_minor_hunks_in_modified_files(self):
@@ -97,19 +97,25 @@ class TestUnimportantToggle(unittest.TestCase):
     MIXED_OLD = "/* gen Mon */\nint lim = 5;\nint keep = 0;\n"
     MIXED_NEW = "/* gen Tue */\nint lim = 10;\nint keep = 0;\n"
 
-    def test_minor_rows_tagged_for_toggle(self):
+    def test_comment_rows_tagged_for_their_own_toggle(self):
         r = compare_pair(self.MIXED_OLD, self.MIXED_NEW, 'f.c')
         table = _group_table(self.MIXED_OLD.split('\n'), self.MIXED_NEW.split('\n'),
                              _group_hunks(r['hunks'])[0])
-        self.assertIn('<tr class="minor">', table)      # comment row hideable
+        self.assertIn('<tr class="comment">', table)    # comment row hideable
         self.assertIn('<tr><td class="ln">', table)     # real/ctx rows untagged
 
-    def test_placeholder_row_per_minor_hunk(self):
+    def test_other_noise_rows_tagged_minor(self):
+        r = compare_pair(OLD_ARXML, NEW_ARXML, 'f.arxml')  # uuid changes
+        table = _group_table(OLD_ARXML.split('\n'), NEW_ARXML.split('\n'),
+                             _group_hunks(r['hunks'])[0])
+        self.assertIn('<tr class="minor">', table)
+
+    def test_placeholder_row_per_hidden_hunk(self):
         r = compare_pair(self.MIXED_OLD, self.MIXED_NEW, 'f.c')
         table = _group_table(self.MIXED_OLD.split('\n'), self.MIXED_NEW.split('\n'),
                              _group_hunks(r['hunks'])[0])
-        self.assertIn('minorph', table)
-        self.assertIn('1 minor (comment) line hidden', table)
+        self.assertIn('commentph', table)
+        self.assertIn('1 comment line hidden', table)
 
     def test_minor_only_group_wrapped_grp_min(self):
         r = compare_pair(OLD_ARXML, NEW_ARXML, 'f.arxml')
@@ -171,10 +177,16 @@ class TestCleanDefaults(unittest.TestCase):
         results = scan(FIX / 'old', FIX / 'new')
         cls.page = build_report(results, FIX / 'old', FIX / 'new')
 
-    def test_unimportant_and_identical_hidden_by_default(self):
-        self.assertIn('<body class="hide-id hide-ign">', self.page)
+    def test_noise_categories_and_identical_hidden_by_default(self):
+        self.assertIn('<body class="hide-id hide-ign hide-cmt">', self.page)
         self.assertIn('class="badge b-ign off"', self.page)
+        self.assertIn('class="badge b-cmt off"', self.page)
         self.assertIn('class="badge b-id off"', self.page)
+
+    def test_comment_and_unimportant_are_separate_badges(self):
+        # comment-only files get their own verdict, apart from UUID/rename noise
+        self.assertRegex(self.page, r'badge b-cmt off[^>]*>\d+ Comment<')
+        self.assertRegex(self.page, r'badge b-ign off[^>]*>\d+ Unimportant<')
 
     def test_modified_files_expanded_by_default(self):
         self.assertRegex(self.page, r'<details class="file sec-real" id="f0"[^>]* open>')

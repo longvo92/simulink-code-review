@@ -12,6 +12,7 @@ from collections import namedtuple
 # Identical) and its colours so the viewer and the report read the same.
 STATUS = {
     'real-change':    ('≠', 'Modified',     '#ff7b7b'),   # not-equal sign
+    'comment-only':   ('≉', 'Comment',      '#9d92e0'),   # comments only
     'ignorable-only': ('≈', 'Unimportant',  '#e6c85c'),   # almost-equal
     'added':          ('+',      'Added',        '#7bd88a'),
     'deleted':        ('−', 'Deleted',      '#c88ad8'),   # minus sign
@@ -21,8 +22,8 @@ STATUS = {
 
 # folder verdict = most significant child verdict; an uncompared 'error' path
 # outranks everything so a folder hiding one can never look clean
-PRIO = {'error': 5, 'real-change': 4, 'ignorable-only': 3, 'added': 2,
-        'deleted': 2, 'identical': 1}
+PRIO = {'error': 6, 'real-change': 5, 'ignorable-only': 4, 'comment-only': 3,
+        'added': 2, 'deleted': 2, 'identical': 1}
 
 # a directory node's .rel is None; a file node carries its relative path
 Node = namedtuple('Node', 'name is_dir status rel children')
@@ -68,29 +69,24 @@ def build_nodes(results):
     return walk(root)
 
 
-def filter_nodes(nodes, show_identical=True, show_unimportant=True, text=''):
-    """Prune a Node list for the tree view. Files with a hidden status
-    ('identical' / 'ignorable-only') or not matching the path substring drop
-    out; a directory survives only if it still has a surviving descendant, so
-    empty folders collapse away. Directory status/markers are left untouched so
-    a folder still shows the worst verdict living under it."""
+def filter_nodes(nodes, text=''):
+    """Narrow the tree to files whose path matches `text` (a directory
+    survives only if a descendant matches, so empty folders collapse away).
+
+    Status is deliberately NOT a filter: the folder structure must stay stable
+    whatever the verdicts are, so a file never disappears from the tree just
+    because it is identical or noise-only. Hiding a change category folds it
+    into another verdict (see the compare rules) -- the row stays put and only
+    its label changes, so the tree never reshuffles under the reviewer."""
     text = text.strip().lower()
-
-    def keep_file(n):
-        if not show_identical and n.status == 'identical':
-            return False
-        if not show_unimportant and n.status == 'ignorable-only':
-            return False
-        if text and text not in (n.rel or '').lower():
-            return False
-        return True
-
+    if not text:
+        return list(nodes)
     out = []
     for n in nodes:
         if n.is_dir:
-            kids = filter_nodes(n.children, show_identical, show_unimportant, text)
+            kids = filter_nodes(n.children, text)
             if kids:
                 out.append(n._replace(children=kids))
-        elif keep_file(n):
+        elif text in (n.rel or '').lower():
             out.append(n)
     return out

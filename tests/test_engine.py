@@ -4,7 +4,8 @@ import unittest
 from pathlib import Path
 
 from compare_tool.diff_engine import compare_pair
-from compare_tool.scanner import scan, summarize_a2l, summarize_ifaces
+from compare_tool.scanner import (scan, summarize, summarize_a2l,
+                                  summarize_ifaces)
 
 FIX = Path(__file__).parent / 'fixtures'
 
@@ -18,14 +19,14 @@ class TestComparePair(unittest.TestCase):
         old = "/* v1 gen Mon */\nint x = 1; // a\n"
         new = "/* v2 gen Tue */\nint x = 1; // b\n"
         r = compare_pair(old, new, 'f.c')
-        self.assertEqual(r['status'], 'ignorable-only')
+        self.assertEqual(r['status'], 'comment-only')
         self.assertEqual(set(kinds(r)), {'comment'})
 
     def test_comment_line_inserted(self):
         old = "int x = 1;\nint y = 2;\n"
         new = "int x = 1;\n/* new comment line */\nint y = 2;\n"
         r = compare_pair(old, new, 'f.c')
-        self.assertEqual(r['status'], 'ignorable-only')
+        self.assertEqual(r['status'], 'comment-only')
 
     def test_whitespace_only(self):
         old = "int x = 1;\n"
@@ -104,7 +105,7 @@ class TestComparePair(unittest.TestCase):
         old = '/* gen Mon */\n/begin MEASUREMENT M "d" UWORD CM 1 100 0 1\n/end MEASUREMENT\n'
         new = '/* gen Tue */\n/begin MEASUREMENT M "d" UWORD CM 1 100 0 1\n/end MEASUREMENT\n'
         r = compare_pair(old, new, 'f.a2l')
-        self.assertEqual(r['status'], 'ignorable-only')
+        self.assertEqual(r['status'], 'comment-only')
         self.assertEqual(set(kinds(r)), {'comment'})
 
     def test_a2l_real(self):
@@ -120,7 +121,7 @@ class TestComparePair(unittest.TestCase):
                '/begin MEASUREMENT M "d" UWORD CM 1 100 0 1\n/end MEASUREMENT\n')
         new = old.replace('Mon', 'Tue')
         r = compare_pair(old, new, 'f.a2l')
-        self.assertEqual(r['status'], 'ignorable-only')
+        self.assertEqual(r['status'], 'comment-only')
         self.assertEqual(set(kinds(r)), {'comment'})
 
     def test_identical(self):
@@ -251,7 +252,7 @@ class TestFixtureTree(unittest.TestCase):
                          '{}: {}'.format(rel, self.results[rel]))
 
     def test_statuses(self):
-        self.expect('src/comment_only.c', 'ignorable-only')
+        self.expect('src/comment_only.c', 'comment-only')
         self.expect('src/rename_only.c', 'ignorable-only')
         self.expect('src/rename_conflict.c', 'real-change')
         self.expect('src/real_change.c', 'real-change')
@@ -262,7 +263,7 @@ class TestFixtureTree(unittest.TestCase):
         self.expect('arxml/admindata.arxml', 'ignorable-only')
         self.expect('arxml/real_change.arxml', 'real-change')
         self.expect('arxml/iface.arxml', 'real-change')
-        self.expect('a2l/comment_only.a2l', 'ignorable-only')
+        self.expect('a2l/comment_only.a2l', 'comment-only')
         self.expect('a2l/cal.a2l', 'real-change')
 
     def test_a2l_diff_recorded(self):
@@ -309,6 +310,81 @@ class TestFixtureTree(unittest.TestCase):
         ign = [h for h in r['hunks'] if h['kind'] != 'real']
         self.assertEqual(len(real), 1)
         self.assertTrue(all(h['kind'] == 'comment' for h in ign))
+
+
+class TestCommentSplit(unittest.TestCase):
+    """Comment-only differences are their own verdict, separate from the other
+    ignorable kinds (UUID / timestamp / rename / whitespace)."""
+
+    def test_comment_only_across_all_rulesets(self):
+        cases = [('f.c', '/* Mon */\nint x = 1;\n', '/* Tue */\nint x = 1;\n'),
+                 ('f.arxml', '<!-- Mon -->\n<A>x</A>\n', '<!-- Tue -->\n<A>x</A>\n'),
+                 ('f.a2l', '/* Mon */\nVAL 1\n', '/* Tue */\nVAL 1\n')]
+        for path, old, new in cases:
+            self.assertEqual(compare_pair(old, new, path)['status'],
+                             'comment-only', path)
+
+    def test_other_noise_stays_unimportant(self):
+        old = '<A UUID="1">\n<B>x</B>\n</A>\n'
+        new = '<A UUID="9">\n<B>x</B>\n</A>\n'
+        self.assertEqual(compare_pair(old, new, 'f.arxml')['status'],
+                         'ignorable-only')
+
+    def test_comment_mixed_with_other_noise_is_unimportant(self):
+        # the narrower "only the comments moved" claim must be exact
+        old = '<!-- Mon -->\n<A UUID="1">\n<B>x</B>\n</A>\n'
+        new = '<!-- Tue -->\n<A UUID="9">\n<B>x</B>\n</A>\n'
+        r = compare_pair(old, new, 'f.arxml')
+        self.assertEqual(set(kinds(r)), {'comment', 'uuid'})
+        self.assertEqual(r['status'], 'ignorable-only')
+
+    def test_comment_next_to_a_real_change_is_still_modified(self):
+        old = '/* Mon */\nint lim = 5;\n'
+        new = '/* Tue */\nint lim = 10;\n'
+        self.assertEqual(compare_pair(old, new, 'f.c')['status'], 'real-change')
+
+    def test_counts_are_separate(self):
+        counts = summarize(scan(FIX / 'old', FIX / 'new'))
+        self.assertTrue(counts['comment-only'])
+        self.assertTrue(counts['ignorable-only'])
+
+
+class TestFoldRules(unittest.TestCase):
+    """Folding a noise category: those files are reported as identical
+    instead, and nothing that matters can ever be folded away."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.plain = scan(FIX / 'old', FIX / 'new')
+        cls.folded = scan(FIX / 'old', FIX / 'new', fold=('ignorable-only',))
+
+    def test_noise_only_files_become_identical(self):
+        noisy = [p for p, r in self.plain.items() if r['status'] == 'ignorable-only']
+        self.assertTrue(noisy)  # fixtures must actually cover this
+        for p in noisy:
+            self.assertEqual(self.folded[p]['status'], 'identical', p)
+
+    def test_no_unimportant_verdict_survives_the_fold(self):
+        self.assertEqual(summarize(self.folded)['ignorable-only'], 0)
+
+    def test_real_added_deleted_untouched(self):
+        before, after = summarize(self.plain), summarize(self.folded)
+        for key in ('real-change', 'added', 'deleted', 'error'):
+            self.assertEqual(before[key], after[key], key)
+
+    def test_folded_file_says_why(self):
+        p = next(p for p, r in self.plain.items() if r['status'] == 'ignorable-only')
+        self.assertTrue(any('ignored by the current compare rules' in n
+                            for n in self.folded[p]['notes']))
+
+    def test_hunks_kept_so_the_diff_is_still_viewable(self):
+        p = next(p for p, r in self.plain.items()
+                 if r['status'] == 'ignorable-only' and r['hunks'])
+        self.assertEqual(self.folded[p]['hunks'], self.plain[p]['hunks'])
+
+    def test_real_change_is_not_foldable(self):
+        results = scan(FIX / 'old', FIX / 'new', fold=('real-change',))
+        self.assertEqual(results['src/real_change.c']['status'], 'real-change')
 
 
 if __name__ == '__main__':

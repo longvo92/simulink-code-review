@@ -6,17 +6,23 @@ raises a loud red banner -- an incomplete compare must never look clean.
 """
 
 import sys
+import webbrowser
+from pathlib import Path
 
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QAction, QBrush, QColor, QPalette
-from PySide6.QtWidgets import (QApplication, QCheckBox, QFileDialog, QHBoxLayout,
-                               QLabel, QLineEdit, QMainWindow, QProgressBar,
+from PySide6.QtWidgets import (QApplication, QCheckBox, QFileDialog,
+                               QHBoxLayout, QHeaderView, QLabel, QLineEdit,
+                               QMainWindow, QMessageBox, QProgressBar,
                                QSplitter, QTreeWidget, QTreeWidgetItem,
                                QVBoxLayout, QWidget)
 
 from ..diff_engine import RULES
-from ..scanner import summarize
+from ..main import default_report_name
+from ..report import build_arxml_report, build_report
+from ..scanner import apply_fold, summarize
 from .diffpane import DiffPane
+from .summary import SummaryPanel
 from .tree import STATUS, build_nodes, filter_nodes
 from .worker import ScanWorker
 
@@ -35,11 +41,14 @@ class MainWindow(QMainWindow):
         self.new = new
         self.exclude = tuple(exclude)
         self.include = _arxml_include() if arxml_only else ()
-        self.results = {}
+        self.arxml_only = arxml_only
+        self._raw_results = {}  # verdicts straight from the scan
+        self.results = {}       # ... after the current compare rules
         self.worker = None
 
         self.setWindowTitle('AUTOSAR CodeGen Compare — viewer')
         self.resize(1200, 800)
+        self.setAcceptDrops(True)  # drop the two folders straight onto the window
 
         self.banner = QLabel()
         self.banner.setVisible(False)
@@ -49,33 +58,64 @@ class MainWindow(QMainWindow):
 
         self.tree = QTreeWidget()
         self.tree.setHeaderLabels(['File', 'Status'])
-        self.tree.setColumnWidth(0, 380)
         self.tree.setUniformRowHeights(True)
+        # the name column hugs its content instead of taking a fixed 380 px,
+        # so Status sits right next to the file name and never gets pushed out
+        # of the panel
+        header = self.tree.header()
+        header.setSectionResizeMode(0, QHeaderView.ResizeToContents)
+        header.setStretchLastSection(True)
         self.tree.itemSelectionChanged.connect(self._on_select)
 
-        # filter row: path search + status toggles. Defaults hide noise
-        # (identical + unimportant) so the tree opens on real changes.
+        # path search only. Verdicts never remove a row: the folder structure
+        # must stay stable so the reviewer's bearings do not shift when change
+        # categories are folded away.
         self.filter_edit = QLineEdit()
         self.filter_edit.setPlaceholderText('Filter by path…')
         self.filter_edit.setClearButtonEnabled(True)
         self.filter_edit.textChanged.connect(self._refresh_tree)
-        self.cb_identical = QCheckBox('Identical')
+
+        # compare-rule toggles: unticking a category means "do not report it
+        # separately" -- the tree is rescanned and each such file comes back as
+        # Identical (nothing left) or Modified (real changes underneath).
+        self.cb_comment = QCheckBox('Comment')
+        self.cb_comment.setChecked(True)
+        self.cb_comment.setToolTip(
+            'Untick to ignore comment-only differences: each such file is then '
+            'reported as Identical or Modified.')
+        self.cb_comment.toggled.connect(self._apply_rules)
         self.cb_unimportant = QCheckBox('Unimportant')
-        self.cb_identical.toggled.connect(self._refresh_tree)
-        self.cb_unimportant.toggled.connect(self._refresh_tree)
-        toggles = QHBoxLayout()
-        toggles.setContentsMargins(0, 0, 0, 0)
-        toggles.addWidget(QLabel('Show:'))
-        toggles.addWidget(self.cb_identical)
-        toggles.addWidget(self.cb_unimportant)
-        toggles.addStretch(1)
-        left = QWidget()
-        lv = QVBoxLayout(left)
+        self.cb_unimportant.setChecked(True)
+        self.cb_unimportant.setToolTip(
+            'Untick to ignore the other unimportant differences (UUIDs, '
+            'timestamps, renames, whitespace): each such file is then reported '
+            'as Identical or Modified.')
+        self.cb_unimportant.toggled.connect(self._apply_rules)
+        rules = QHBoxLayout()
+        rules.setContentsMargins(0, 0, 0, 0)
+        rules.addWidget(QLabel('Report:'))
+        rules.addWidget(self.cb_comment)
+        rules.addWidget(self.cb_unimportant)
+        rules.addStretch(1)
+
+        tree_box = QWidget()
+        lv = QVBoxLayout(tree_box)
         lv.setContentsMargins(6, 6, 6, 0)
         lv.setSpacing(4)
         lv.addWidget(self.filter_edit)
-        lv.addLayout(toggles)
+        lv.addLayout(rules)
         lv.addWidget(self.tree, 1)
+
+        # quick-changes rollup under the tree: the same "what changed in the
+        # model / calibration" view --arxml-only gives, without leaving the app
+        self.summary = SummaryPanel()
+        self.summary.fileActivated.connect(self._reselect)
+        left = QSplitter(Qt.Vertical)
+        left.addWidget(tree_box)
+        left.addWidget(self.summary)
+        left.setStretchFactor(0, 3)
+        left.setStretchFactor(1, 1)
+        left.setSizes([560, 240])
 
         self.diff = DiffPane()
 
@@ -103,10 +143,7 @@ class MainWindow(QMainWindow):
         tb.setMovable(False)
         act_open = QAction('Open folders…', self)
         act_open.triggered.connect(self._pick_folders)
-        act_rescan = QAction('Rescan', self)
-        act_rescan.triggered.connect(self._start_scan)
         tb.addAction(act_open)
-        tb.addAction(act_rescan)
         tb.addSeparator()
         act_prev = QAction('◀ Prev change', self)
         act_prev.setShortcut('F7')
@@ -116,25 +153,91 @@ class MainWindow(QMainWindow):
         act_next.triggered.connect(lambda: self.diff.next_change())
         tb.addAction(act_prev)
         tb.addAction(act_next)
+        tb.addSeparator()
+        self.act_export = QAction('Export report…', self)
+        self.act_export.setShortcut('Ctrl+E')
+        self.act_export.setEnabled(False)
+        self.act_export.triggered.connect(self._export_report)
+        tb.addAction(self.act_export)
+        # both shortcuts must fire wherever the focus is inside the window
+        for act in (act_prev, act_next, self.act_export):
+            self.addAction(act)
 
         if self.old and self.new:
             self._start_scan()
         else:
-            self._pick_folders()
+            # no folders yet: invite a drag & drop instead of forcing a modal
+            # file dialog on the reviewer the moment the app opens
+            self.diff.show_drop_hint()
+            self.statusBar().showMessage(
+                'Drag the OLD and NEW folders onto this window, or use '
+                '"Open folders…".')
 
     # --- folder selection ---
 
     def _pick_folders(self):
         o = QFileDialog.getExistingDirectory(self, 'Select OLD folder', self.old or '')
         if not o:
+            self._front()
             return
         n = QFileDialog.getExistingDirectory(self, 'Select NEW folder', self.new or o)
+        self._front()  # closing a native dialog can leave the window behind others
         if not n:
             return
         self.old, self.new = o, n
         self._start_scan()
 
+    def _front(self):
+        """Bring the window back to the front and give it focus."""
+        self.raise_()
+        self.activateWindow()
+
+    # --- drag & drop: drop the two folders straight onto the window ---
+
+    @staticmethod
+    def _dropped_dirs(event):
+        return [p for p in (u.toLocalFile() for u in event.mimeData().urls())
+                if p and Path(p).is_dir()]
+
+    def dragEnterEvent(self, event):
+        if event.mimeData().hasUrls() and self._dropped_dirs(event):
+            event.acceptProposedAction()
+
+    def dragMoveEvent(self, event):
+        if event.mimeData().hasUrls() and self._dropped_dirs(event):
+            event.acceptProposedAction()
+
+    def dropEvent(self, event):
+        dirs = self._dropped_dirs(event)
+        if not dirs:
+            return
+        event.acceptProposedAction()
+        if len(dirs) >= 2:
+            self.old, self.new = dirs[0], dirs[1]
+        elif not self.old or (self.old and self.new):
+            # first drop of a pair: OLD, and wait for the second
+            self.old, self.new = dirs[0], None
+            self.diff.show_drop_hint(self.old)
+            self.statusBar().showMessage(
+                'OLD = {} — now drop the NEW folder.'.format(self.old))
+            self._front()
+            return
+        else:
+            self.new = dirs[0]
+        self._front()
+        self._start_scan()
+
     # --- scan lifecycle ---
+
+    def _fold(self):
+        """Change categories the current rules do NOT report separately; those
+        files come back Identical (or Modified when real changes remain)."""
+        fold = []
+        if not self.cb_comment.isChecked():
+            fold.append('comment-only')
+        if not self.cb_unimportant.isChecked():
+            fold.append('ignorable-only')
+        return tuple(fold)
 
     def _start_scan(self):
         if not (self.old and self.new):
@@ -143,12 +246,17 @@ class MainWindow(QMainWindow):
             return
         self.banner.setVisible(False)
         self.tree.clear()
+        self.summary.set_results({})
         self.diff.clear()
+        self._raw_results = {}
         self.results = {}
+        self.act_export.setEnabled(False)
         self.progress.setVisible(True)
         self.progress.setRange(0, 0)  # busy/indeterminate until first tick
         self.setWindowTitle('AUTOSAR CodeGen Compare — {}  →  {}'.format(self.old, self.new))
         self.statusBar().showMessage('Scanning…')
+        # the scan itself is rule-free; the rules are applied to its results,
+        # so flipping a category never costs a second walk of the disk
         self.worker = ScanWorker(self.old, self.new, self.exclude, self.include)
         self.worker.progressed.connect(self._on_progress)
         self.worker.done.connect(self._on_done)
@@ -161,21 +269,37 @@ class MainWindow(QMainWindow):
         self.statusBar().showMessage('Scanning {}/{}: {}'.format(done, total, rel))
 
     def _on_done(self, results):
-        self.results = results
-        self._refresh_tree()
-        counts = summarize(results)
+        self._raw_results = results
+        # the rollup reports the scan itself, never the folded view: a hidden
+        # category must not make the model look untouched
+        self.summary.set_results(results)
         self.progress.setRange(0, 1)
         self.progress.setValue(1)
         self.progress.setVisible(False)
-        if counts['error']:
-            errs = sorted(rel for rel, r in results.items() if r['status'] == 'error')
+        self.act_export.setEnabled(bool(results))
+        errs = sorted(rel for rel, r in results.items() if r['status'] == 'error')
+        if errs:
             shown = ', '.join(errs[:20]) + (' …' if len(errs) > 20 else '')
             self.banner.setText('⚠ COMPARE INCOMPLETE — {} path(s) NOT compared '
                                 '(treat as potentially changed): {}'.format(len(errs), shown))
             self.banner.setVisible(True)
+        self._apply_rules()
+
+    def _apply_rules(self):
+        """Re-judge the scanned tree under the current category toggles. Pure
+        bookkeeping on results already in memory -- no second walk of the disk,
+        so a toggle is instant and the folders are read exactly once."""
+        if not self._raw_results:
+            return
+        keep = self._selected_rel()
+        self.results = apply_fold(self._raw_results, self._fold())
+        self._refresh_tree()
+        self._reselect(keep)  # keep the reviewer on the file they were reading
+        counts = summarize(self.results)
         self.statusBar().showMessage(
-            '{real-change} modified · {ignorable-only} unimportant · {added} added · '
-            '{deleted} deleted · {identical} identical · {error} error(s)'.format(**counts))
+            '{real-change} modified · {comment-only} comment-only · '
+            '{ignorable-only} unimportant · {added} added · {deleted} deleted · '
+            '{identical} identical · {error} error(s)'.format(**counts))
 
     def _on_fail(self, msg):
         self.progress.setVisible(False)
@@ -184,19 +308,53 @@ class MainWindow(QMainWindow):
         self.banner.setVisible(True)
         self.statusBar().showMessage('SCAN FAILED')
 
+    # --- report export ---
+
+    def _export_report(self):
+        """Write the same self-contained HTML report the CLI produces.
+
+        Built from the RAW scan, never from the folded view: the report is the
+        record of what the compare found, so a category the reviewer collapsed
+        on screen (say Comment) must still be in the file, with its real
+        verdict. Otherwise an exported report could show a file as Identical
+        when it was not -- the silent miss this tool exists to prevent. The
+        report's own badges still let the reader hide categories while looking
+        at it."""
+        if not self._raw_results:
+            return
+        default = str(Path(self.new).parent / default_report_name(self.arxml_only))
+        out, _sel = QFileDialog.getSaveFileName(
+            self, 'Export HTML report', default, 'HTML report (*.html)')
+        self._front()
+        if not out:
+            return
+        try:
+            build = build_arxml_report if self.arxml_only else build_report
+            Path(out).write_text(build(self._raw_results, self.old, self.new),
+                                 encoding='utf-8')
+        except Exception as e:
+            QMessageBox.critical(self, 'Export failed',
+                                 '{}: {}'.format(type(e).__name__, e))
+            return
+        self.statusBar().showMessage('Report written (full scan): {}'.format(out))
+        if QMessageBox.question(
+                self, 'Report exported',
+                'Written to:\n{}\n\nIt contains the full compare, including any '
+                'category hidden here.\n\nOpen it now?'.format(out)
+                ) == QMessageBox.Yes:
+            webbrowser.open(Path(out).resolve().as_uri())
+        self._front()
+
     # --- tree fill + selection ---
 
     def _refresh_tree(self):
-        """Rebuild the tree from results under the current filter + toggles.
-        Cheap enough to run on every keystroke; selection is not preserved."""
+        """Rebuild the tree from results under the current path filter. Cheap
+        enough to run on every keystroke; selection is not preserved."""
         self.tree.clear()
         if not self.results:
             return
-        nodes = filter_nodes(build_nodes(self.results),
-                             show_identical=self.cb_identical.isChecked(),
-                             show_unimportant=self.cb_unimportant.isChecked(),
-                             text=self.filter_edit.text())
-        self._fill_tree(nodes)
+        self._fill_tree(filter_nodes(build_nodes(self.results),
+                                     text=self.filter_edit.text()))
 
     def _fill_tree(self, nodes):
         def add(parent, node):
@@ -219,11 +377,24 @@ class MainWindow(QMainWindow):
         for n in nodes:
             add(None, n)
 
-    def _on_select(self):
+    def _selected_rel(self):
         items = self.tree.selectedItems()
-        if not items:
+        return items[0].data(0, REL_ROLE) if items else None
+
+    def _reselect(self, rel):
+        """Re-open the file that was showing before a rescan."""
+        if not rel:
             return
-        rel = items[0].data(0, REL_ROLE)
+        stack = [self.tree.topLevelItem(i) for i in range(self.tree.topLevelItemCount())]
+        while stack:
+            item = stack.pop()
+            if item.data(0, REL_ROLE) == rel:
+                self.tree.setCurrentItem(item)
+                return
+            stack.extend(item.child(i) for i in range(item.childCount()))
+
+    def _on_select(self):
+        rel = self._selected_rel()
         if rel and rel in self.results:
             self.diff.show_file(rel, self.results[rel], self.old, self.new)
 
