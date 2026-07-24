@@ -4,7 +4,8 @@ import unittest
 from pathlib import Path
 
 from compare_tool.diff_engine import compare_pair
-from compare_tool.scanner import scan, summarize_a2l, summarize_ifaces
+from compare_tool.scanner import (scan, summarize, summarize_a2l,
+                                  summarize_ifaces)
 
 FIX = Path(__file__).parent / 'fixtures'
 
@@ -309,6 +310,44 @@ class TestFixtureTree(unittest.TestCase):
         ign = [h for h in r['hunks'] if h['kind'] != 'real']
         self.assertEqual(len(real), 1)
         self.assertTrue(all(h['kind'] == 'comment' for h in ign))
+
+
+class TestFoldRules(unittest.TestCase):
+    """Folding a noise category: those files are reported as identical
+    instead, and nothing that matters can ever be folded away."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.plain = scan(FIX / 'old', FIX / 'new')
+        cls.folded = scan(FIX / 'old', FIX / 'new', fold=('ignorable-only',))
+
+    def test_noise_only_files_become_identical(self):
+        noisy = [p for p, r in self.plain.items() if r['status'] == 'ignorable-only']
+        self.assertTrue(noisy)  # fixtures must actually cover this
+        for p in noisy:
+            self.assertEqual(self.folded[p]['status'], 'identical', p)
+
+    def test_no_unimportant_verdict_survives_the_fold(self):
+        self.assertEqual(summarize(self.folded)['ignorable-only'], 0)
+
+    def test_real_added_deleted_untouched(self):
+        before, after = summarize(self.plain), summarize(self.folded)
+        for key in ('real-change', 'added', 'deleted', 'error'):
+            self.assertEqual(before[key], after[key], key)
+
+    def test_folded_file_says_why(self):
+        p = next(p for p, r in self.plain.items() if r['status'] == 'ignorable-only')
+        self.assertTrue(any('ignored by the current compare rules' in n
+                            for n in self.folded[p]['notes']))
+
+    def test_hunks_kept_so_the_diff_is_still_viewable(self):
+        p = next(p for p, r in self.plain.items()
+                 if r['status'] == 'ignorable-only' and r['hunks'])
+        self.assertEqual(self.folded[p]['hunks'], self.plain[p]['hunks'])
+
+    def test_real_change_is_not_foldable(self):
+        results = scan(FIX / 'old', FIX / 'new', fold=('real-change',))
+        self.assertEqual(results['src/real_change.c']['status'], 'real-change')
 
 
 if __name__ == '__main__':

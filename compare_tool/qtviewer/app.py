@@ -9,10 +9,10 @@ import sys
 
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QAction, QBrush, QColor, QPalette
-from PySide6.QtWidgets import (QApplication, QFileDialog, QLabel, QLineEdit,
-                               QMainWindow, QProgressBar, QSplitter,
-                               QTreeWidget, QTreeWidgetItem, QVBoxLayout,
-                               QWidget)
+from PySide6.QtWidgets import (QApplication, QCheckBox, QFileDialog,
+                               QHBoxLayout, QLabel, QLineEdit, QMainWindow,
+                               QProgressBar, QSplitter, QTreeWidget,
+                               QTreeWidgetItem, QVBoxLayout, QWidget)
 
 from ..diff_engine import RULES
 from ..scanner import summarize
@@ -37,6 +37,7 @@ class MainWindow(QMainWindow):
         self.include = _arxml_include() if arxml_only else ()
         self.results = {}
         self.worker = None
+        self._pending_rel = None  # file to re-open after a rule-toggle rescan
 
         self.setWindowTitle('AUTOSAR CodeGen Compare — viewer')
         self.resize(1200, 800)
@@ -60,11 +61,29 @@ class MainWindow(QMainWindow):
         self.filter_edit.setPlaceholderText('Filter by path…')
         self.filter_edit.setClearButtonEnabled(True)
         self.filter_edit.textChanged.connect(self._refresh_tree)
+
+        # compare-rule toggles: unticking a category means "do not report it
+        # separately" -- the tree is rescanned and each such file comes back as
+        # Identical (nothing left) or Modified (real changes underneath).
+        self.cb_unimportant = QCheckBox('Unimportant')
+        self.cb_unimportant.setChecked(True)
+        self.cb_unimportant.setToolTip(
+            'Untick to rescan ignoring unimportant differences (UUIDs, '
+            'timestamps, renames, whitespace): each such file is then reported '
+            'as Identical or Modified.')
+        self.cb_unimportant.toggled.connect(self._start_scan)
+        rules = QHBoxLayout()
+        rules.setContentsMargins(0, 0, 0, 0)
+        rules.addWidget(QLabel('Report:'))
+        rules.addWidget(self.cb_unimportant)
+        rules.addStretch(1)
+
         left = QWidget()
         lv = QVBoxLayout(left)
         lv.setContentsMargins(6, 6, 6, 0)
         lv.setSpacing(4)
         lv.addWidget(self.filter_edit)
+        lv.addLayout(rules)
         lv.addWidget(self.tree, 1)
 
         self.diff = DiffPane()
@@ -126,11 +145,22 @@ class MainWindow(QMainWindow):
 
     # --- scan lifecycle ---
 
+    def _fold(self):
+        """Change categories the current rules do NOT report separately; those
+        files come back Identical (or Modified when real changes remain)."""
+        fold = []
+        if not self.cb_unimportant.isChecked():
+            fold.append('ignorable-only')
+        return tuple(fold)
+
     def _start_scan(self):
         if not (self.old and self.new):
             return
         if self.worker and self.worker.isRunning():
             return
+        # a rule toggle rescans; remember the open file so the reviewer keeps
+        # their place instead of being thrown back to an empty pane
+        self._pending_rel = self._selected_rel()
         self.banner.setVisible(False)
         self.tree.clear()
         self.diff.clear()
@@ -139,7 +169,8 @@ class MainWindow(QMainWindow):
         self.progress.setRange(0, 0)  # busy/indeterminate until first tick
         self.setWindowTitle('AUTOSAR CodeGen Compare — {}  →  {}'.format(self.old, self.new))
         self.statusBar().showMessage('Scanning…')
-        self.worker = ScanWorker(self.old, self.new, self.exclude, self.include)
+        self.worker = ScanWorker(self.old, self.new, self.exclude, self.include,
+                                 self._fold())
         self.worker.progressed.connect(self._on_progress)
         self.worker.done.connect(self._on_done)
         self.worker.failed.connect(self._on_fail)
@@ -153,6 +184,7 @@ class MainWindow(QMainWindow):
     def _on_done(self, results):
         self.results = results
         self._refresh_tree()
+        self._reselect(getattr(self, '_pending_rel', None))
         counts = summarize(results)
         self.progress.setRange(0, 1)
         self.progress.setValue(1)
@@ -206,11 +238,24 @@ class MainWindow(QMainWindow):
         for n in nodes:
             add(None, n)
 
-    def _on_select(self):
+    def _selected_rel(self):
         items = self.tree.selectedItems()
-        if not items:
+        return items[0].data(0, REL_ROLE) if items else None
+
+    def _reselect(self, rel):
+        """Re-open the file that was showing before a rescan."""
+        if not rel:
             return
-        rel = items[0].data(0, REL_ROLE)
+        stack = [self.tree.topLevelItem(i) for i in range(self.tree.topLevelItemCount())]
+        while stack:
+            item = stack.pop()
+            if item.data(0, REL_ROLE) == rel:
+                self.tree.setCurrentItem(item)
+                return
+            stack.extend(item.child(i) for i in range(item.childCount()))
+
+    def _on_select(self):
+        rel = self._selected_rel()
         if rel and rel in self.results:
             self.diff.show_file(rel, self.results[rel], self.old, self.new)
 
